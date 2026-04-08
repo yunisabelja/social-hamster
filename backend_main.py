@@ -1,0 +1,515 @@
+"""
+SocialScope — Backend API v2
+What's new:
+  - YouTube: reads defaultAudioLanguage, falls back to transcript + langdetect
+  - TikTok:  downloads first 10s audio via yt-dlp, detects language with faster-whisper
+  - Language filter applied after scraping based on actual spoken language
+  - YouTube API now passes regionCode + relevanceLanguage
+
+New packages (run once):
+    pip install faster-whisper yt-dlp langdetect youtube-transcript-api
+
+Run:
+    uvicorn backend_main_v2:app --reload --port 8000
+"""
+
+import os, asyncio, re, uuid, tempfile, sys
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
+import httpx
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+TIKTOK_MS_TOKEN = os.getenv("TIKTOK_MS_TOKEN", "")
+TIKTOK_PROXY    = os.getenv("TIKTOK_PROXY", "")
+_whisper_model  = None
+jobs: dict[str, dict] = {}
+
+def get_whisper():
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        print("[Whisper] tiny model loaded.")
+    return _whisper_model
+
+LANG_NAMES = {
+    "id":"Indonesian","en":"English","ja":"Japanese","ko":"Korean",
+    "th":"Thai","vi":"Vietnamese","ms":"Malay","zh":"Chinese",
+    "pt":"Portuguese","es":"Spanish","fr":"French","ar":"Arabic",
+    "hi":"Hindi","tl":"Filipino","unknown":"Unknown",
+}
+
+# ── Collaboration detection ───────────────────────────────────────────────
+_C_HIGH_TAGS = re.compile(
+    r'#(ad|sponsored|partnership|paidpartnership|collaboration|collab|gifted|promo)\b',
+    re.IGNORECASE,
+)
+_C_AFF_URLS = re.compile(
+    r'(onelink\.to|bit\.ly|linktr\.ee|go\.link|app\.link'
+    r'|adjust\.com|branch\.io|kochava\.com|appsflyer\.com)',
+    re.IGNORECASE,
+)
+_C_UTM = re.compile(r'[?&](utm_\w+|ref=|aff=)', re.IGNORECASE)
+_C_MED_WORDS = re.compile(
+    r'\b(sponsored|paid promotion|in partnership with|in collaboration with'
+    r'|ambassador|official partner|presented by|supported by)\b',
+    re.IGNORECASE,
+)
+_C_PROMO_CODE = re.compile(
+    r'\b(use code|promo code|discount code|coupon code)\s+[A-Z0-9]{3,20}\b',
+    re.IGNORECASE,
+)
+_C_AT_BRAND   = re.compile(r'@[A-Za-z][A-Za-z0-9_.]{2,}')
+_C_LINK_IN_BIO = re.compile(r'\blink[- ]?in[- ]?bio\b', re.IGNORECASE)
+
+def detect_collaboration(video: dict) -> dict:
+    """Analyse a video dict and return collaboration metadata."""
+    full = f"{video.get('title','')} {video.get('caption','')}"
+    signals: list[str] = []
+
+    # HIGH — any one match is conclusive
+    m = _C_HIGH_TAGS.search(full)
+    if m:
+        signals.append(f"#{m.group(1).lower()} in caption")
+    m = _C_AFF_URLS.search(full)
+    if m:
+        signals.append(f"{m.group(1)} URL found")
+    if _C_UTM.search(full):
+        signals.append("tracking URL parameters found")
+    if signals:
+        return {"is_collab": True, "confidence": "high", "signals": signals}
+
+    # MEDIUM
+    m = _C_MED_WORDS.search(full)
+    if m:
+        signals.append(f'"{m.group(0).lower()}" in caption')
+    if _C_PROMO_CODE.search(full):
+        signals.append("discount/promo code detected")
+    if signals:
+        return {"is_collab": True, "confidence": "medium", "signals": signals}
+
+    # LOW
+    brands = _C_AT_BRAND.findall(full)
+    if brands:
+        signals.append(f"@mention in caption: {brands[0]}")
+    if _C_LINK_IN_BIO.search(full) and brands:
+        signals.append("link in bio with brand @mention")
+    if signals:
+        return {"is_collab": True, "confidence": "low", "signals": signals}
+
+    return {"is_collab": False, "confidence": "low", "signals": []}
+
+class SearchRequest(BaseModel):
+    keywords:        list[str]
+    platforms:       list[str]
+    region:          str       = "ID"
+    language:        str       = "any"
+    detect_language: bool      = False
+    count:           int       = 30
+    min_views:       int       = 0
+    min_followers:   int       = 0
+    days_back:       int       = 30
+    search_variants: list[str] = []
+
+class AccountRequest(BaseModel):
+    handle: str
+    platforms: list[str]
+
+class VariantRequest(BaseModel):
+    keyword: str
+
+# Lookup table: normalised keyword → list of {lang, variant}
+VARIANT_TABLE: dict[str, list[dict]] = {
+    "haikyu": [
+        {"lang":"ja","variant":"ハイキュー!!"},
+        {"lang":"ko","variant":"하이큐"},
+        {"lang":"zh","variant":"排球少年"},
+        {"lang":"id","variant":"Haikyuu"},
+    ],
+    "haikyuu": [
+        {"lang":"ja","variant":"ハイキュー!!"},
+        {"lang":"ko","variant":"하이큐"},
+        {"lang":"zh","variant":"排球少年"},
+    ],
+    "naruto": [
+        {"lang":"ja","variant":"ナルト"},
+        {"lang":"ko","variant":"나루토"},
+        {"lang":"zh","variant":"火影忍者"},
+    ],
+    "one piece": [
+        {"lang":"ja","variant":"ワンピース"},
+        {"lang":"ko","variant":"원피스"},
+        {"lang":"zh","variant":"海賊王"},
+    ],
+    "attack on titan": [
+        {"lang":"ja","variant":"進撃の巨人"},
+        {"lang":"ko","variant":"진격의 거인"},
+        {"lang":"zh","variant":"进击的巨人"},
+        {"lang":"id","variant":"Shingeki no Kyojin"},
+    ],
+    "demon slayer": [
+        {"lang":"ja","variant":"鬼滅の刃"},
+        {"lang":"ko","variant":"귀멸의 칼날"},
+        {"lang":"zh","variant":"鬼灭之刃"},
+        {"lang":"id","variant":"Kimetsu no Yaiba"},
+    ],
+    "genshin impact": [
+        {"lang":"ja","variant":"原神"},
+        {"lang":"ko","variant":"원신"},
+        {"lang":"zh","variant":"原神"},
+    ],
+    "blue lock": [
+        {"lang":"ja","variant":"ブルーロック"},
+        {"lang":"ko","variant":"블루 록"},
+        {"lang":"zh","variant":"蓝色监狱"},
+    ],
+    "jujutsu kaisen": [
+        {"lang":"ja","variant":"呪術廻戦"},
+        {"lang":"ko","variant":"주술회전"},
+        {"lang":"zh","variant":"咒术回战"},
+    ],
+}
+
+def fmt(n):
+    if n>=1_000_000: return f"{n/1_000_000:.1f}M"
+    if n>=1_000: return f"{n/1_000:.1f}K"
+    return str(n)
+
+def ht(t): return re.findall(r"#(\w+)", t)
+
+def er(l,c,s,v): return round((l+c+s)/v*100,2) if v else 0.0
+
+async def detect_yt_lang(vid_id, snip):
+    from langdetect import detect
+
+    # 1. defaultAudioLanguage from snippet — already fetched, most reliable
+    dal = snip.get("defaultAudioLanguage") or snip.get("defaultLanguage")
+    if dal:
+        return dal.split("-")[0]  # normalise "pt-BR" → "pt", "zh-Hant" → "zh"
+
+    # 2. Transcript via youtube-transcript-api v1.x
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api   = YouTubeTranscriptApi()
+        tl    = await asyncio.to_thread(api.list, vid_id)
+        codes = [t.language_code for t in tl]
+        if codes:
+            tr   = await asyncio.to_thread(api.fetch, vid_id, codes[:8])
+            text = " ".join(s.text for s in list(tr)[:30])
+            if len(text.strip()) >= 30:
+                return detect(text)
+    except: pass
+
+    # 3. Description — needs ≥80 chars for reliable detection
+    try:
+        desc = snip.get("description","").strip()
+        if len(desc) >= 80:
+            return detect(desc)
+    except: pass
+
+    return "unknown"
+
+async def detect_tt_lang(url):
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "clip.mp3")
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp","--no-playlist","--extract-audio","--audio-format","mp3",
+                "--audio-quality","9","--postprocessor-args","-t 10",
+                "-o",out,"--quiet",url,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            await asyncio.wait_for(proc.wait(), timeout=30)
+            if not os.path.exists(out): return "unknown"
+            m = await asyncio.to_thread(get_whisper)
+            segs, info = await asyncio.to_thread(
+                m.transcribe, out, beam_size=1, language=None, task="transcribe",
+                without_timestamps=True, condition_on_previous_text=False)
+            list(segs)
+            return info.language or "unknown"
+    except asyncio.TimeoutError: return "unknown"
+    except Exception as e:
+        print(f"  [WARN] tt lang detect: {e}"); return "unknown"
+
+async def search_youtube(keyword, count=30, days_back=30, region="ID", language="id", detect_lang=True):
+    if not YOUTUBE_API_KEY:
+        return [_myt(keyword,i) for i in range(min(count,10))]
+    pub = (datetime.utcnow()-timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    async with httpx.AsyncClient() as c:
+        yt_params = {
+            "key":YOUTUBE_API_KEY,"q":keyword,"part":"snippet","type":"video",
+            "maxResults":min(count,50),"publishedAfter":pub,"order":"viewCount",
+            "regionCode":region}
+        if language and language != "any":
+            yt_params["relevanceLanguage"] = language
+        sr = await c.get("https://www.googleapis.com/youtube/v3/search", params=yt_params, timeout=15)
+        items = sr.json().get("items",[])
+        if not items: return []
+        vids = [i["id"]["videoId"] for i in items if "videoId" in i.get("id",{})]
+        chs  = list({i["snippet"]["channelId"] for i in items})
+        vr = await c.get("https://www.googleapis.com/youtube/v3/videos",
+            params={"key":YOUTUBE_API_KEY,"id":",".join(vids),"part":"statistics,contentDetails,snippet"},timeout=15)
+        vm = {v["id"]:v for v in vr.json().get("items",[])}
+        cr = await c.get("https://www.googleapis.com/youtube/v3/channels",
+            params={"key":YOUTUBE_API_KEY,"id":",".join(chs[:50]),"part":"statistics,snippet"},timeout=15)
+        cm = {ch["id"]:ch for ch in cr.json().get("items",[])}
+    results=[]
+    for item in items:
+        vid=item["id"].get("videoId",""); snip=item["snippet"]; ch_id=snip["channelId"]
+        vd=vm.get(vid,{}); st=vd.get("statistics",{}); vs=vd.get("snippet",snip)
+        ch=cm.get(ch_id,{}); cs=ch.get("statistics",{}); csn=ch.get("snippet",{})
+        v=int(st.get("viewCount",0)); l=int(st.get("likeCount",0))
+        co=int(st.get("commentCount",0)); s=int(cs.get("subscriberCount",0))
+        lang = await detect_yt_lang(vid,vs) if detect_lang else "unknown"
+        row = {
+            "platform":"youtube","id":vid,"url":f"https://www.youtube.com/watch?v={vid}",
+            "thumbnail":snip.get("thumbnails",{}).get("medium",{}).get("url",""),
+            "title":snip.get("title",""),"caption":snip.get("description","")[:200],
+            "hashtags":ht(snip.get("description","")),"upload_date":snip.get("publishedAt","")[:10],
+            "views":v,"likes":l,"comments":co,"shares":0,
+            "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
+            "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
+            "account":{"id":ch_id,"username":csn.get("customUrl",ch_id),
+                "display_name":snip.get("channelTitle",""),"followers":s,"followers_fmt":fmt(s),
+                "profile_url":f"https://www.youtube.com/channel/{ch_id}","verified":bool(csn.get("country"))},
+            "engagement_rate":er(l,co,0,v),"keyword":keyword,"region":region,
+        }
+        row["collaboration"] = detect_collaboration(row)
+        results.append(row)
+    return results
+
+def _myt(keyword,i):
+    chs=["AnimeCentralID","OtakuReviewID","AnimeNusantara","WeabooID","SakuraAnimasi"]
+    langs=["id","id","id","en","ja"]; v=500000-i*40000+i*7777; s=50000+i*8000; lg=langs[i%len(langs)]
+    _captions = [
+        f"Best {keyword} content #{i+1}",
+        f"Best {keyword} content #{i+1} #ad — check out onelink.to/animeshop",
+        f"Best {keyword} moments! Use code ANIME20 for 20% off. #sponsored",
+        f"Amazing {keyword} edit! @NikeID @CrunchyrollID link in bio",
+    ]
+    cap = _captions[i % 4]
+    row = {"platform":"youtube","id":f"yt_mock_{i}","url":f"https://youtube.com/watch?v=mock{i}",
+        "thumbnail":f"https://picsum.photos/seed/yt{i}/320/180",
+        "title":f"{keyword} — Amazing Moments #{i+1}","caption":cap,
+        "hashtags":[keyword.replace(" ",""),"anime","fyp"],
+        "upload_date":(datetime.now()-timedelta(days=i*3)).strftime("%Y-%m-%d"),
+        "views":v,"likes":int(v*.08),"comments":int(v*.005),"shares":0,
+        "views_fmt":fmt(v),"likes_fmt":fmt(int(v*.08)),"comments_fmt":fmt(int(v*.005)),
+        "spoken_language":lg,"spoken_language_name":LANG_NAMES.get(lg,lg.upper()),
+        "account":{"id":f"ch_{i}","username":f"@{chs[i%len(chs)]}","display_name":chs[i%len(chs)],
+            "followers":s,"followers_fmt":fmt(s),"profile_url":f"https://youtube.com/@{chs[i%len(chs)]}","verified":i%3==0},
+        "engagement_rate":round((int(v*.08)+int(v*.005))/v*100,2),"keyword":keyword,"region":"ID"}
+    row["collaboration"] = detect_collaboration(row)
+    return row
+
+async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
+    try:
+        from TikTokApi import TikTokApi
+        results=[]
+        async with TikTokApi() as api:
+            print(f"[TikTok] Creating session (internal timeout=90s)…")
+            await asyncio.wait_for(
+                api.create_sessions(
+                    ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
+                    num_sessions=1, sleep_after=3,
+                    timeout=90000,
+                    proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
+                ),
+                timeout=120
+            )
+            print(f"[TikTok] Session OK — searching '{keyword}'")
+            async for video in api.search.search_type(keyword, "item", count=count):
+                try:
+                    d=video.as_dict; au=video.author
+                    st=d.get("statsV2") or d.get("stats",{})
+                    ast=d.get("authorStats",{}); mu=d.get("music",{})
+                    au_d=d.get("author",{})
+                    v=int(st.get("playCount",0) or 0); l=int(st.get("diggCount",0) or 0)
+                    co=int(st.get("commentCount",0) or 0); sh=int(st.get("shareCount",0) or 0)
+                    f=int(ast.get("followerCount",0) or 0)
+                    desc=d.get("desc","")
+                    url=f"https://www.tiktok.com/@{au.username}/video/{video.id}"
+                    lang = await detect_tt_lang(url) if detect_lang else "unknown"
+                    row = {
+                        "platform":"tiktok","id":str(video.id),"url":url,
+                        "thumbnail":d.get("video",{}).get("cover",""),
+                        "title":desc[:100],"caption":desc,"hashtags":ht(desc),
+                        "upload_date":datetime.fromtimestamp(int(d.get("createTime",0))).strftime("%Y-%m-%d"),
+                        "views":v,"likes":l,"comments":co,"shares":sh,
+                        "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
+                        "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
+                        "account":{"id":str(au.user_id),"username":f"@{au.username}",
+                            "display_name":au_d.get("nickname",au.username),"followers":f,"followers_fmt":fmt(f),
+                            "profile_url":f"https://www.tiktok.com/@{au.username}",
+                            "verified":au_d.get("verified",False)},
+                        "audio":{"title":mu.get("title",""),"artist":mu.get("authorName",""),"original":mu.get("original",False)},
+                        "engagement_rate":er(l,co,sh,v),"keyword":keyword,"region":region,
+                    }
+                    row["collaboration"] = detect_collaboration(row)
+                    results.append(row)
+                except Exception as ve:
+                    print(f"  [TikTok] skipping video: {ve}"); continue
+        return results
+    except asyncio.TimeoutError:
+        print(f"[TikTok] ERROR: session creation timed out after 60s — falling back to mock")
+        return [_mtt(keyword,i) for i in range(min(count,10))]
+    except Exception as e:
+        print(f"[TikTok] ERROR: {type(e).__name__}: {e}")
+        return [_mtt(keyword,i) for i in range(min(count,10))]
+
+def _mtt(keyword,i):
+    hs=["animecrew.id","haikyufan_id","otaku.nusantara","anime.id.zone","rizkifandom"]
+    langs=["id","id","id","en","ja"]; v=2000000-i*150000+i*13333; f=120000+i*15000; lg=langs[i%len(langs)]
+    _captions = [
+        f"✨ {keyword} best moments!! #anime #fyp",
+        f"✨ {keyword} edit!! #ad #paidpartnership @CrunchyrollID #fyp",
+        f"🔥 {keyword} collab!! in partnership with @GenshinImpact promo code WEEB30 #fyp",
+        f"💫 {keyword} vibes!! link in bio @AnimeStoreid #anime #fyp",
+    ]
+    cap = _captions[i % 4]
+    row = {"platform":"tiktok","id":f"tt_mock_{i}","url":f"https://tiktok.com/@{hs[i%len(hs)]}/video/mock{i}",
+        "thumbnail":f"https://picsum.photos/seed/tt{i}/320/570",
+        "title":f"{keyword} edit {i+1} ✨","caption":cap,
+        "hashtags":[keyword.replace(" ",""),"anime","fyp","indonesia"],
+        "upload_date":(datetime.now()-timedelta(days=i*2)).strftime("%Y-%m-%d"),
+        "views":v,"likes":int(v*.12),"comments":int(v*.008),"shares":int(v*.04),
+        "views_fmt":fmt(v),"likes_fmt":fmt(int(v*.12)),"comments_fmt":fmt(int(v*.008)),
+        "spoken_language":lg,"spoken_language_name":LANG_NAMES.get(lg,lg.upper()),
+        "account":{"id":f"u_{i}","username":f"@{hs[i%len(hs)]}",
+            "display_name":hs[i%len(hs)].replace("."," ").title(),
+            "followers":f,"followers_fmt":fmt(f),"profile_url":f"https://tiktok.com/@{hs[i%len(hs)]}","verified":i%4==0},
+        "audio":{"title":"Fly High","artist":"BURNOUT SYNDROMES","original":False},
+        "engagement_rate":round((int(v*.12)+int(v*.008)+int(v*.04))/v*100,2),"keyword":keyword,"region":"ID"}
+    row["collaboration"] = detect_collaboration(row)
+    return row
+
+async def run_search_job(job_id, req):
+    jobs[job_id].update({"status":"running","progress":0})
+    all_results = []
+
+    # Expand each keyword with its variants so we search all of them
+    search_terms = []  # (main_keyword, search_term, platform)
+    for kw in req.keywords:
+        for platform in req.platforms:
+            search_terms.append((kw, kw, platform))
+            for variant in req.search_variants:
+                search_terms.append((kw, variant, platform))
+
+    total = len(search_terms); done = 0
+    for main_kw, term, platform in search_terms:
+        try:
+            if platform=="youtube":
+                r=await search_youtube(term,req.count,req.days_back,req.region,req.language,req.detect_language)
+            elif platform=="tiktok":
+                r=await search_tiktok(term,req.count,req.region,req.detect_language)
+            else: r=[]
+            for x in r:
+                x["keyword"] = main_kw
+                x["search_variant"] = term
+            r=[x for x in r if x["views"]>=req.min_views and x["account"]["followers"]>=req.min_followers]
+            if req.language and req.language!="any":
+                r=[x for x in r if x.get("spoken_language") in (req.language,"unknown")]
+            all_results.extend(r)
+        except Exception as e: jobs[job_id].setdefault("errors",[]).append(str(e))
+        done+=1; jobs[job_id]["progress"]=int(done/total*100)
+    seen,unique=set(),[]
+    for r in all_results:
+        k=f"{r['platform']}_{r['id']}"
+        if k not in seen: seen.add(k); unique.append(r)
+    lc:dict[str,int]={}; bp:dict[str,int]={}
+    for r in unique:
+        l=r.get("spoken_language","unknown"); lc[l]=lc.get(l,0)+1; bp[r["platform"]]=bp.get(r["platform"],0)+1
+    tv=sum(r["views"] for r in unique)
+    jobs[job_id].update({"status":"done","results":unique,"summary":{
+        "total":len(unique),"total_views":tv,"total_views_fmt":fmt(tv),
+        "avg_engagement":round(sum(r["engagement_rate"] for r in unique)/len(unique),2) if unique else 0,
+        "by_platform":bp,"by_language":lc,
+        "top_posts":sorted(unique,key=lambda x:x["views"],reverse=True)[:3]}})
+
+@asynccontextmanager
+async def lifespan(app):
+    print("[Startup] Loading Whisper model…")
+    await asyncio.to_thread(get_whisper)
+    print("[Startup] Ready."); yield
+
+app = FastAPI(title="SocialScope API", version="2.0.0", lifespan=lifespan)
+app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
+
+@app.get("/")
+def root(): return {"status":"ok","service":"SocialScope API v2.0"}
+
+@app.get("/health")
+def health():
+    return {"status":"ok","youtube_configured":bool(YOUTUBE_API_KEY),
+            "tiktok_configured":bool(TIKTOK_MS_TOKEN),
+            "whisper_loaded":_whisper_model is not None,
+            "timestamp":datetime.utcnow().isoformat()}
+
+@app.post("/suggest-variants")
+def suggest_variants(req: VariantRequest):
+    kw = req.keyword.lower().strip()
+    suggestions = VARIANT_TABLE.get(kw, [])
+    return {"keyword": req.keyword, "suggestions": suggestions}
+
+@app.post("/search")
+async def start_search(req: SearchRequest, background_tasks: BackgroundTasks):
+    if not req.keywords: raise HTTPException(400,"At least one keyword required")
+    if not req.platforms: raise HTTPException(400,"At least one platform required")
+    job_id=str(uuid.uuid4())
+    jobs[job_id]={"id":job_id,"status":"queued","progress":0,"request":req.model_dump(),
+                  "created_at":datetime.utcnow().isoformat(),"results":[],"summary":{}}
+    background_tasks.add_task(run_search_job,job_id,req)
+    return {"job_id":job_id,"status":"queued"}
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id):
+    if job_id not in jobs: raise HTTPException(404,"Job not found")
+    job=jobs[job_id]
+    if job["status"]!="done": return {k:v for k,v in job.items() if k!="results"}
+    return job
+
+@app.get("/jobs/{job_id}/export")
+def export_job(job_id, fmt_param: str = "json"):
+    if job_id not in jobs: raise HTTPException(404,"Job not found")
+    results=jobs[job_id].get("results",[])
+    if fmt_param=="csv":
+        import csv,io; buf=io.StringIO()
+        keys=["platform","id","url","title","views","likes","comments","shares",
+              "engagement_rate","spoken_language","spoken_language_name",
+              "upload_date","account.username","account.followers","keyword","region","hashtags"]
+        w=csv.DictWriter(buf,fieldnames=keys,extrasaction="ignore"); w.writeheader()
+        for r in results:
+            row={**r,"account.username":r["account"]["username"],
+                 "account.followers":r["account"]["followers"],
+                 "hashtags":" ".join(r.get("hashtags",[]))}
+            w.writerow({k:row.get(k,"") for k in keys})
+        return Response(content=buf.getvalue(),media_type="text/csv",
+                        headers={"Content-Disposition":f"attachment; filename=socialscope_{job_id[:8]}.csv"})
+    return results
+
+@app.post("/account")
+async def account_lookup(req: AccountRequest):
+    handle=req.handle.lstrip("@"); result={}
+    if "youtube" in req.platforms and YOUTUBE_API_KEY:
+        async with httpx.AsyncClient() as client:
+            r=await client.get("https://www.googleapis.com/youtube/v3/channels",
+                params={"key":YOUTUBE_API_KEY,"forHandle":handle,"part":"snippet,statistics"},timeout=10)
+            items=r.json().get("items",[])
+            if items:
+                ch=items[0]; s,sn=ch.get("statistics",{}),ch.get("snippet",{})
+                result["youtube"]={"id":ch["id"],"display_name":sn.get("title",""),
+                    "description":sn.get("description","")[:300],
+                    "subscribers":int(s.get("subscriberCount",0)),
+                    "total_views":int(s.get("viewCount",0)),"video_count":int(s.get("videoCount",0)),
+                    "country":sn.get("country",""),"profile_url":f"https://youtube.com/@{handle}",
+                    "thumbnail":sn.get("thumbnails",{}).get("medium",{}).get("url","")}
+    if "tiktok" in req.platforms:
+        result["tiktok"]={"note":"TikTok account lookup requires a live TikTokApi session"}
+    return result

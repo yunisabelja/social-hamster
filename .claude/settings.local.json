@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd:*)",
+      "Bash(python:*)",
+      "Bash(grep -v \"av0\\\\|av1\\\\|av2\\\\|av3\\\\|av4\\\\|account-avatar\\\\|#00d4ff\\\\|#000;\\\\s*$\")",
+      "Bash(curl:*)",
+      "Bash(netstat -ano)",
+      "Bash(pkill -f \"uvicorn backend_main\")",
+      "Bash(uvicorn backend_main:app --port 8001)",
+      "Bash(taskkill /F /IM python.exe /T)",
+      "Bash(taskkill /F /PID 25832 /PID 20120 /PID 24032 /PID 15712)",
+      "Bash(tasklist)"
+    ]
+  }
+}

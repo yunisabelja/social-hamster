@@ -1,0 +1,12 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+httpx>=0.27.0
+python-dotenv>=1.0.0
+google-api-python-client>=2.120.0
+TikTokApi>=6.3.0
+playwright>=1.43.0
+pydantic>=2.6.0
+faster-whisper>=1.0.0
+yt-dlp>=2024.1.0
+langdetect>=1.0.9
+youtube-transcript-api>=0.6.0

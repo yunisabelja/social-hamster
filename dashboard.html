@@ -1,0 +1,2145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Social Hamster — Social Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  /* ── Palette (overridden by JS) — default: Introvert Core ── */
+  --bg:       #f7ffe0;
+  --bg2:      #ffeee2;
+  --bg3:      #f2efc7;
+  --bg4:      #d2bba0;
+  --accent:   #9f7e69;
+  --accent2:  #d2bba0;
+  --accent3:  #9f7e69;
+  --text:     #3d2b1f;
+  --text2:    #9f7e69;
+  --btn-text: #f7ffe0;
+
+  /* ── Derived / fixed ── */
+  --tt:      var(--accent);
+  --yt:      #e05c5c;
+  --green:   #5cb88a;
+  --amber:   #d4974a;
+  --border:  rgba(159,126,105,0.12);
+  --border2: rgba(159,126,105,0.22);
+  --r:       16px;
+  --font:    'DM Sans', sans-serif;
+  --head:    'DM Serif Display', serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle dot grid */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: radial-gradient(var(--border2) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none; z-index: 0;
+}
+
+/* Glow blob */
+body::after {
+  content: '';
+  position: fixed;
+  top: -200px; left: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 5%, transparent) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+.app { position: relative; z-index: 1; display: flex; min-height: 100vh; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 240px; min-width: 240px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 0;
+  position: sticky; top: 0; height: 100vh;
+}
+.sidebar-logo {
+  padding: 28px 26px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-text {
+  font-family: var(--head);
+  font-size: 24px; font-weight: 400; letter-spacing: -0.01em;
+  color: var(--text); line-height: 1.1;
+}
+.logo-text span { color: var(--accent); }
+.logo-sub { font-size: 13px; color: var(--text2); margin-top: 4px; letter-spacing: 0.04em; }
+
+/* ── Palette picker ── */
+.palette-switcher {
+  padding: 12px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.palette-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); margin-bottom: 7px; }
+.palette-picker { position: relative; }
+.palette-trigger {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 10px; color: var(--text); font-family: var(--font);
+  font-size: 13px; font-weight: 600; padding: 8px 10px;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: border-color 0.2s; user-select: none; outline: none;
+}
+.palette-trigger:hover, .palette-trigger.open { border-color: var(--accent); }
+.palette-trigger-name { flex: 1; text-align: left; }
+.palette-trigger-arrow { color: var(--text2); font-size: 11px; transition: transform 0.2s; }
+.palette-trigger.open .palette-trigger-arrow { transform: rotate(180deg); }
+.p-dots { display: flex; gap: 3px; flex-shrink: 0; }
+.p-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 20%, transparent); }
+.palette-opts {
+  position: absolute; top: calc(100% + 5px); left: 0; right: 0;
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; z-index: 200;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--text) 22%, transparent);
+  display: none; overflow: hidden;
+}
+.palette-opts.open { display: block; }
+.palette-opt {
+  display: flex; align-items: center; gap: 9px; padding: 9px 12px;
+  cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text);
+  transition: background 0.12s;
+}
+.palette-opt:hover { background: var(--bg3); }
+.palette-opt.selected { color: var(--accent); font-weight: 700; }
+
+.sidebar-nav { padding: 16px 14px; flex: 1; }
+.nav-section { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text2); padding: 0 12px; margin: 16px 0 6px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-radius: 10px;
+  font-size: 15px; font-weight: 500; color: var(--text2);
+  cursor: pointer; transition: all 0.2s; margin-bottom: 2px;
+  border: none; background: none; width: 100%; text-align: left;
+}
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+.nav-item.active { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.nav-icon { font-size: 15px; width: 18px; text-align: center; }
+
+.sidebar-bottom {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+.api-status {
+  background: var(--bg3);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.api-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.api-row:last-child { margin-bottom: 0; }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dot.on  { background: var(--green); box-shadow: 0 0 6px rgba(0,229,160,0.5); }
+.dot.off { background: var(--text2); }
+.api-label { color: var(--text2); }
+.api-val   { color: var(--text); font-weight: 500; display: flex; align-items: center; gap: 5px; }
+
+/* ── Main ── */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* ── Topbar ── */
+.topbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+}
+.page-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.api-url-badge {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--text2);
+  display: flex; align-items: center; gap: 6px;
+}
+.api-url-badge input {
+  background: none; border: none; outline: none;
+  color: var(--accent); font-family: var(--font); font-size: 13px;
+  width: 220px;
+}
+
+/* ── Content area ── */
+.content { padding: 28px 32px; flex: 1; }
+
+/* ── Page panels ── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Search form ── */
+.search-card {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 24px;
+  position: relative; overflow: hidden;
+}
+.search-card::after {
+  content: '';
+  position: absolute; top: -80px; right: -80px;
+  width: 250px; height: 250px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+}
+.form-row { display: flex; gap: 12px; margin-bottom: 18px; }
+.form-label {
+  font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text2); margin-bottom: 8px; display: block;
+  display: flex; align-items: center; gap: 6px;
+}
+.form-label::before { content: ''; width: 2px; height: 12px; background: var(--accent); border-radius: 2px; display: block; }
+
+.kw-wrap { flex: 1; }
+input[type=text], input[type=number], select {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  padding: 11px 16px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+}
+input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+input::placeholder { color: var(--text2); }
+
+.select-wrap { position: relative; }
+.select-wrap::after { content: '▾'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text2); pointer-events: none; font-size: 13px; }
+
+.tags-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px; min-height: 10px; }
+.tag {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 999px;
+  padding: 4px 14px; font-size: 12px; color: var(--accent);
+  display: flex; align-items: center; gap: 7px;
+  animation: tagPop 0.15s ease;
+}
+@keyframes tagPop { from{opacity:0;transform:scale(0.8)} to{opacity:1;transform:scale(1)} }
+.tag-x { cursor: pointer; opacity: 0.5; font-size: 14px; transition: opacity 0.15s; }
+.tag-x:hover { opacity: 1; color: #ff4444; }
+
+.platform-row { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.platform-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: 999px;
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.18s;
+  border: 1.5px solid var(--border2);
+  background: transparent; color: var(--text2);
+  opacity: 0.6;
+}
+.platform-btn:hover { opacity: 0.85; }
+/* ── TikTok active ── */
+.platform-btn.active-tt {
+  background: rgba(105,201,208,0.12);
+  border-color: #69C9D0;
+  color: #69C9D0;
+  font-weight: 700;
+  opacity: 1;
+}
+/* ── YouTube active ── */
+.platform-btn.active-yt {
+  background: rgba(255,68,68,0.12);
+  border-color: #FF4444;
+  color: #FF4444;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.filters-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 22px; }
+
+.run-btn {
+  width: 100%;
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none; border-radius: 999px;
+  padding: 14px 32px;
+  font-family: var(--font); font-size: 15px; font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.run-btn:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 40%, transparent); }
+.run-btn:active { transform: none; }
+.run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── Progress bar ── */
+.progress-wrap {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 20px; margin-bottom: 20px;
+  display: none;
+}
+.progress-label { font-size: 13px; color: var(--text2); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.progress-track { background: var(--bg4); border-radius: 999px; height: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; width: 0%; }
+
+/* ── Stats strip ── */
+.stats-strip { display: grid; grid-template-columns: repeat(7,1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 18px; padding: 16px 20px;
+  animation: fadeUp 0.3s ease both;
+}
+@keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.stat-val { font-size: 26px; font-weight: 700; color: var(--accent); }
+.stat-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); margin-top: 3px; }
+.stat-sub { font-size: 11px; color: var(--text2); margin-top: 4px; opacity: 0.65; line-height: 1.3; }
+.stat-delta { font-size: 12px; color: var(--green); margin-top: 2px; }
+
+/* ── Chart grid ── */
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 22px;
+}
+.chart-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+.chart-sub { font-size: 13px; color: var(--text2); font-weight: 400; }
+.chart-box { position: relative; height: 200px; }
+
+/* ── Results section ── */
+.results-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.results-title { font-size: 15px; font-weight: 700; }
+.results-title span { color: var(--tt); }
+.results-actions { display: flex; gap: 8px; align-items: center; }
+
+.filter-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.filter-tab {
+  padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--text2);
+}
+.filter-tab:hover { color: var(--text); }
+.filter-tab.active { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--accent); }
+.filter-tab.yt-tab.active { background: rgba(255,68,68,0.12); border-color: rgba(255,68,68,0.3); color: var(--yt); }
+
+/* ── Table ── */
+.table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+thead th {
+  padding: 12px 16px; text-align: left;
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text2); font-weight: 600; white-space: nowrap;
+  cursor: pointer; user-select: none; transition: color 0.2s;
+}
+thead th:hover { color: var(--accent); }
+thead th.sorted { color: var(--accent); }
+tbody tr { border-bottom: 1px solid var(--border); transition: background 0.2s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: color-mix(in srgb, var(--text) 4%, var(--bg2)); }
+td { padding: 12px 16px; vertical-align: middle; }
+
+.platform-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.badge-tt { background: rgba(0,200,255,0.12); color: #00c8ff; border: 1px solid rgba(0,200,255,0.28); }
+.badge-yt { background: rgba(224,92,92,0.12); color: var(--yt); border: 1px solid rgba(224,92,92,0.22); }
+
+.account-cell { display: flex; align-items: center; gap: 9px; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; flex-shrink: 0; color: #000;
+}
+.av0{background:#00d4ff} .av1{background:#ff6b35} .av2{background:#00e5a0}
+.av3{background:#f59e0b} .av4{background:#a855f7}
+.account-name { font-size: 13px; font-weight: 500; }
+a.account-link { color: inherit; text-decoration: none; }
+a.account-link:hover { text-decoration: underline; }
+.account-subs { font-size: 13px; color: var(--text2); }
+.verified { color: var(--tt); font-size: 10px; }
+
+.video-cell { max-width: 240px; }
+.video-title { font-size: 12px; font-weight: 500; color: var(--accent); text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-title:hover { text-decoration: underline; }
+.video-caption { font-size: 13px; color: var(--text2); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+.num { font-size: 12px; font-weight: 600; }
+.num.hot { color: var(--accent); }
+.eng-bar { display: flex; align-items: center; gap: 6px; }
+.eng-pill {
+  padding: 2px 10px; border-radius: 999px; font-size: 11px;
+  font-weight: 600;
+}
+.eng-high { background: rgba(0,229,160,0.12); color: var(--green); }
+.eng-mid  { background: rgba(245,158,11,0.12); color: var(--amber); }
+.eng-low  { background: rgba(136,136,170,0.12); color: var(--text2); }
+
+a.post-link { color: var(--accent); font-size: 12px; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); transition: border-color 0.2s; }
+a.post-link:hover { border-color: var(--accent); }
+
+.lang-pill {
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  background: rgba(136,136,170,0.12); color: var(--text2);
+}
+.lang-id { background: rgba(220,38,38,0.12); color: #f87171; }
+.lang-en { background: rgba(59,130,246,0.12); color: #60a5fa; }
+.lang-ja { background: rgba(236,72,153,0.12); color: #f472b6; }
+.lang-ko { background: rgba(168,85,247,0.12); color: #c084fc; }
+.lang-zh { background: rgba(234,179,8,0.12);  color: #facc15; }
+.lang-ms { background: rgba(20,184,166,0.12);  color: #2dd4bf; }
+.lang-th { background: rgba(249,115,22,0.12);  color: #fb923c; }
+.lang-vi { background: rgba(34,197,94,0.12);   color: #4ade80; }
+.lang-tl { background: rgba(14,165,233,0.12);  color: #38bdf8; }
+
+.icon-btn {
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 999px;
+  padding: 7px 16px; font-family: var(--font); font-size: 12px; color: var(--text2);
+  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+}
+.icon-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* ── Account panel ── */
+.account-search-row { display: flex; gap: 12px; margin-bottom: 24px; }
+.account-search-row input { flex: 1; }
+.search-btn {
+  background: var(--accent); color: var(--btn-text);
+  border: none; border-radius: 999px;
+  padding: 0 24px; font-family: var(--font); font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.search-btn:hover { opacity: 0.85; box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+.account-card {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 16px; padding: 24px; margin-bottom: 16px;
+  display: flex; gap: 20px; align-items: flex-start;
+  animation: fadeUp 0.3s ease;
+}
+.account-avatar-lg {
+  width: 64px; height: 64px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800; flex-shrink: 0; color: #000;
+}
+.account-meta { flex: 1; }
+.account-meta h2 { font-size: 20px; font-weight: 800; margin-bottom: 2px; }
+.account-meta .handle { font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+.account-stats-row { display: flex; gap: 20px; flex-wrap: wrap; }
+.account-stat { text-align: center; }
+.account-stat .val { font-size: 20px; font-weight: 700; color: var(--accent); }
+.account-stat .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); margin-top: 2px; }
+.platform-tag { padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+
+/* ── Empty / loading states ── */
+.empty-state { text-align: center; padding: 60px 24px; color: var(--text2); }
+.empty-icon { font-size: 40px; margin-bottom: 14px; opacity: 0.25; }
+.empty-msg { font-size: 16px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; opacity: 0.6; }
+
+.inline-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--bg3); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 16px; padding: 11px 20px;
+  font-size: 13px; color: var(--accent); z-index: 999;
+  transform: translateY(60px); opacity: 0; transition: all 0.25s ease;
+  pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .filters-grid { grid-template-columns: 1fr 1fr; }
+  .stats-strip { grid-template-columns: repeat(3,1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .compare-grid, .compare-results-grid { grid-template-columns: 1fr; }
+  .compare-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Collaboration indicator ── */
+.collab-tag {
+  font-size: 13px; font-weight: 700; color: var(--accent);
+  cursor: help; line-height: 1;
+}
+
+/* ── Variants section ── */
+.variants-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  cursor: pointer; margin-bottom: 10px;
+  background: none; border: none; font-family: var(--font);
+  padding: 0; transition: color 0.15s;
+}
+.variants-toggle:hover { color: var(--text); }
+.variants-toggle.active { color: #c084fc; }
+.variant-badge {
+  display: none; background: rgba(168,85,247,0.15);
+  border: 1px solid rgba(168,85,247,0.3); color: #c084fc;
+  border-radius: 999px; padding: 1px 8px; font-size: 10px; font-weight: 700;
+}
+.variants-section {
+  display: none;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;
+}
+.variants-section.show { display: block; }
+.variants-helper { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 10px; }
+.variant-tag {
+  background: color-mix(in srgb, var(--accent2) 15%, transparent); border: 1px solid color-mix(in srgb, var(--accent2) 30%, transparent);
+  border-radius: 999px; padding: 4px 14px; font-size: 12px; color: var(--accent2);
+  display: flex; align-items: center; gap: 7px; animation: tagPop 0.15s ease;
+}
+
+/* ── Suggest strip ── */
+.suggest-strip {
+  display: none;
+  background: color-mix(in srgb, var(--accent) 5%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+}
+.suggest-label { font-size: 13px; color: var(--text2); margin-bottom: 8px; }
+.suggest-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.suggest-chip {
+  background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 999px; padding: 4px 11px;
+  font-size: 12px; color: var(--accent); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;
+}
+.suggest-chip:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.suggest-chip.added {
+  background: rgba(0,229,160,0.1); border-color: rgba(0,229,160,0.3);
+  color: var(--green); cursor: default; pointer-events: none;
+}
+
+/* ── Save Search button ── */
+.search-btn-row { display: flex; gap: 10px; align-items: stretch; }
+.search-btn-row .run-btn { flex: 1; }
+.save-btn {
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--text); border-radius: var(--r);
+  padding: 10px 20px; font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.save-btn:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+
+/* ── Saved search list ── */
+.saved-list { display: flex; flex-direction: column; gap: 10px; }
+.saved-item {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 16px 20px;
+  display: flex; align-items: center; gap: 14px;
+  animation: fadeUp 0.2s ease;
+}
+.saved-item-info { flex: 1; min-width: 0; }
+.saved-kws { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.saved-meta { font-size: 13px; color: var(--text2); display: flex; gap: 12px; flex-wrap: wrap; }
+.saved-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-run {
+  background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent); border-radius: 8px; padding: 6px 14px;
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-run:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.btn-del {
+  background: rgba(255,68,68,0.08); border: 1px solid rgba(255,68,68,0.2);
+  color: var(--yt); border-radius: 8px; padding: 6px 14px;
+  font-family: var(--font); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-del:hover { background: rgba(255,68,68,0.2); }
+
+/* ── Compare mode ── */
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.compare-pane .search-card { margin-bottom: 0; }
+.compare-run-row { display: flex; justify-content: center; margin-bottom: 24px; }
+.compare-results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.compare-result-pane .table-wrap { max-height: 400px; overflow-y: auto; }
+.compare-summary {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 14px; padding: 20px; margin-bottom: 20px;
+}
+.compare-summary h3 { font-size: 14px; font-weight: 700; margin-bottom: 14px; }
+.compare-summary-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; row-gap: 12px; }
+.compare-metric {
+  background: var(--bg3); border-radius: 10px; padding: 14px 16px; text-align: center;
+}
+.compare-metric-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text2); margin-bottom: 10px; }
+.compare-metric-row { display: flex; justify-content: center; gap: 20px; }
+.compare-winner { font-size: 12px; color: var(--green); margin-top: 8px; }
+.cval { font-size: 18px; font-weight: 700; }
+.cval.a { color: var(--accent); }
+.cval.b { color: var(--accent2); }
+.clabel { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+/* ── Watchlist ── */
+.watchlist-add-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 0; }
+.watchlist-add-row input { flex: 1; }
+.watchlist-list { display: flex; flex-direction: column; gap: 10px; }
+.watchlist-item {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 16px 20px;
+  display: flex; align-items: center; gap: 14px;
+  animation: fadeUp 0.2s ease;
+}
+.watchlist-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800; flex-shrink: 0; color: #000;
+}
+.watchlist-info { flex: 1; min-width: 0; }
+.watchlist-handle { font-size: 14px; font-weight: 700; color: var(--tt); margin-bottom: 4px; }
+.watchlist-stats { font-size: 13px; color: var(--text2); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.watchlist-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-check {
+  background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.3);
+  color: var(--green); border-radius: 8px; padding: 6px 14px;
+  font-family: var(--font); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-check:hover { background: rgba(0,229,160,0.2); }
+.btn-check:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Watchlist expand ── */
+.watchlist-item { cursor: pointer; }
+.watchlist-item.expanded { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.toggle-icon { font-size: 11px; color: var(--text2); margin-left: 6px; transition: transform 0.2s; display: inline-block; }
+.watchlist-item.expanded .toggle-icon { transform: rotate(180deg); }
+.watchlist-detail {
+  display: none; margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.watchlist-item.expanded .watchlist-detail { display: block; }
+.watchlist-detail-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px; margin-bottom: 12px;
+}
+.watchlist-stat {
+  background: var(--bg3); border-radius: 8px; padding: 10px 12px; text-align: center;
+}
+.watchlist-stat-val { font-size: 17px; font-weight: 700; color: var(--accent); }
+.watchlist-stat-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text2); margin-top: 2px; }
+.watchlist-profile-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--accent); text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); transition: border-color 0.2s;
+}
+.watchlist-profile-link:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-text">🐹 Social<span>Hamster</span></div>
+    <div class="logo-sub">Social Intelligence</div>
+  </div>
+  <div class="palette-switcher">
+    <div class="palette-label">Theme</div>
+    <div class="palette-picker" id="palettePicker">
+      <button class="palette-trigger" id="paletteTrigger" onclick="togglePaletteDropdown()">
+        <div class="p-dots" id="triggerDots"></div>
+        <span class="palette-trigger-name" id="triggerName">Introvert Core</span>
+        <span class="palette-trigger-arrow">▾</span>
+      </button>
+      <div class="palette-opts" id="paletteOpts"></div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Main</div>
+    <button class="nav-item active" onclick="showPanel('search',this)">
+      <span class="nav-icon">⌕</span> Keyword Search
+    </button>
+    <button class="nav-item" onclick="showPanel('account',this)">
+      <span class="nav-icon">◎</span> Account Deep-dive
+    </button>
+    <div class="nav-section">History</div>
+    <button class="nav-item" onclick="showPanel('saved',this)">
+      <span class="nav-icon">◈</span> Saved Searches
+    </button>
+    <div class="nav-section">Tools</div>
+    <button class="nav-item" onclick="showPanel('compare',this)">
+      <span class="nav-icon">⊞</span> Compare
+    </button>
+    <button class="nav-item" onclick="showPanel('watchlist',this)">
+      <span class="nav-icon">★</span> Watchlist
+    </button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="api-status">
+      <div class="api-row">
+        <span class="api-label">YouTube</span>
+        <span class="api-val"><div class="dot" id="yt-dot"></div> <span id="yt-status">checking…</span></span>
+      </div>
+      <div class="api-row">
+        <span class="api-label">TikTok</span>
+        <span class="api-val"><div class="dot" id="tt-dot"></div> <span id="tt-status">checking…</span></span>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <span class="page-title" id="page-title">Keyword Search</span>
+    <div class="topbar-right">
+      <div class="api-url-badge">
+        API:
+        <input type="text" id="apiUrl" value="http://localhost:8001" onchange="API_BASE=this.value;checkHealth()"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ── Search Panel ── -->
+    <div class="panel active" id="panel-search">
+
+      <div class="search-card">
+        <span class="form-label">Keywords & Hashtags</span>
+        <div class="form-row">
+          <div class="kw-wrap">
+            <input type="text" id="kwInput" placeholder="Type keyword or #hashtag → press Enter"/>
+          </div>
+        </div>
+        <div class="tags-row" id="tagsRow"></div>
+
+        <!-- Suggestion strip (auto-shown when variants are found) -->
+        <div class="suggest-strip" id="suggestStrip">
+          <div class="suggest-label">Suggested translations for "<strong id="suggestKeyword"></strong>" — click to add as search variant:</div>
+          <div class="suggest-chips" id="suggestChips"></div>
+        </div>
+
+        <!-- Variants toggle + collapsible section -->
+        <button class="variants-toggle" id="variantsToggle" onclick="toggleVariants()">
+          <span id="variantsArrow">▶</span> Search variants
+          <span class="variant-badge" id="variantBadge"></span>
+        </button>
+        <div class="variants-section" id="variantsSection">
+          <div class="variants-helper">
+            Add the same keyword in other languages to find more results across all platforms.<br>
+            E.g. for <strong style="color:var(--text)">Haikyu</strong> add: <span style="color:#c084fc">ハイキュー!!</span> (Japanese), <span style="color:#c084fc">하이큐</span> (Korean), <span style="color:#c084fc">排球少年</span> (Chinese)
+          </div>
+          <div class="tags-row" id="variantTagsRow"></div>
+          <input type="text" id="variantInput" placeholder="Type a translation or variant → press Enter"/>
+        </div>
+
+        <span class="form-label">Platforms</span>
+        <div class="platform-row">
+          <button class="platform-btn active-tt" id="btn-tt" onclick="togglePlatform('tiktok',this,'active-tt')">♪ TikTok</button>
+          <button class="platform-btn active-yt" id="btn-yt" onclick="togglePlatform('youtube',this,'active-yt')">▶ YouTube</button>
+        </div>
+
+        <span class="form-label">Filters</span>
+        <div class="filters-grid">
+          <div>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Region</label>
+            <div class="select-wrap">
+              <select id="fRegion">
+                <optgroup label="North America">
+                  <option value="US">🇺🇸 United States (US)</option>
+                  <option value="CA">🇨🇦 Canada (CA)</option>
+                </optgroup>
+                <optgroup label="Latin America">
+                  <option value="BR">🇧🇷 Brazil (BR)</option>
+                  <option value="AR">🇦🇷 Argentina (AR)</option>
+                  <option value="CO">🇨🇴 Colombia (CO)</option>
+                  <option value="CL">🇨🇱 Chile (CL)</option>
+                  <option value="PE">🇵🇪 Peru (PE)</option>
+                  <option value="VE">🇻🇪 Venezuela (VE)</option>
+                  <option value="MX">🇲🇽 Mexico (MX)</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="GB">🇬🇧 United Kingdom (GB)</option>
+                  <option value="DE">🇩🇪 Germany (DE)</option>
+                  <option value="FR">🇫🇷 France (FR)</option>
+                  <option value="IT">🇮🇹 Italy (IT)</option>
+                  <option value="ES">🇪🇸 Spain (ES)</option>
+                  <option value="NL">🇳🇱 Netherlands (NL)</option>
+                  <option value="SE">🇸🇪 Sweden (SE)</option>
+                  <option value="PL">🇵🇱 Poland (PL)</option>
+                  <option value="TR">🇹🇷 Turkey (TR)</option>
+                </optgroup>
+                <optgroup label="East Asia">
+                  <option value="JP">🇯🇵 Japan (JP)</option>
+                  <option value="KR">🇰🇷 South Korea (KR)</option>
+                  <option value="CN">🇨🇳 China (CN)</option>
+                  <option value="TW">🇹🇼 Taiwan (TW)</option>
+                  <option value="HK">🇭🇰 Hong Kong (HK)</option>
+                </optgroup>
+                <optgroup label="Southeast Asia">
+                  <option value="ID" selected>🇮🇩 Indonesia (ID)</option>
+                  <option value="PH">🇵🇭 Philippines (PH)</option>
+                  <option value="TH">🇹🇭 Thailand (TH)</option>
+                  <option value="VN">🇻🇳 Vietnam (VN)</option>
+                  <option value="MY">🇲🇾 Malaysia (MY)</option>
+                  <option value="SG">🇸🇬 Singapore (SG)</option>
+                </optgroup>
+                <optgroup label="Oceania">
+                  <option value="AU">🇦🇺 Australia (AU)</option>
+                  <option value="NZ">🇳🇿 New Zealand (NZ)</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+            <input type="number" id="fCount" value="30" min="5" max="100" step="5"/>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Min. views</label>
+            <input type="number" id="fMinViews" value="0" min="0" step="1000"/>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Date range</label>
+            <div class="select-wrap">
+              <select id="fDays">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="365">Last year</option>
+                <option value="9999">All time</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="search-btn-row">
+          <button class="run-btn" id="runBtn" onclick="startSearch()">
+            <span id="runLabel">Run Search</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l6 4-6 4V4z" fill="currentColor"/></svg>
+          </button>
+          <button class="save-btn" onclick="saveCurrentSearch()" title="Save this search to localStorage">◈ Save Search</button>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-label">
+          <span id="progressMsg">Searching…</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+
+      <!-- Stats strip -->
+      <div class="stats-strip" id="statsStrip" style="display:none"></div>
+
+      <!-- Charts -->
+      <div class="charts-grid" id="chartsGrid" style="display:none">
+        <div class="chart-card">
+          <div class="chart-title">Views by platform <span class="chart-sub">total</span></div>
+          <div class="chart-box"><canvas id="chartPlatform"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Top content by views <span class="chart-sub">top 8</span></div>
+          <div class="chart-box"><canvas id="chartTop"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Engagement rate distribution <span class="chart-sub">% of posts</span></div>
+          <div class="chart-box"><canvas id="chartEng"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Posts by upload date <span class="chart-sub">last 30 days</span></div>
+          <div class="chart-box"><canvas id="chartDate"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <div id="resultsSection" style="display:none">
+        <div class="results-header">
+          <div class="results-title">Results <span id="resultCount"></span></div>
+          <div class="results-actions">
+            <div class="select-wrap" style="min-width:152px">
+              <select id="collabFilter" onchange="applyCollabFilter()" style="font-size:12px;padding:7px 12px">
+                <option value="all">All videos</option>
+                <option value="collab">Collabs only</option>
+                <option value="noncollab">Non-collabs only</option>
+              </select>
+            </div>
+            <button class="icon-btn" onclick="exportCSV()">↓ CSV</button>
+            <button class="icon-btn" onclick="exportJSON()">↓ JSON</button>
+          </div>
+        </div>
+        <div class="filter-tabs" id="filterTabs">
+          <button class="filter-tab active" data-filter="all" onclick="filterResults('all',this)">All</button>
+          <button class="filter-tab active-tt" data-filter="tiktok" onclick="filterResults('tiktok',this)">TikTok</button>
+          <button class="filter-tab yt-tab" data-filter="youtube" onclick="filterResults('youtube',this)">YouTube</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th onclick="sortBy('platform')">Platform</th>
+                <th>Collab</th>
+                <th onclick="sortBy('account')">Creator</th>
+                <th>Video</th>
+                <th onclick="sortBy('views')">Views ↕</th>
+                <th onclick="sortBy('likes')">Likes ↕</th>
+                <th onclick="sortBy('comments')">Comments ↕</th>
+                <th onclick="sortBy('shares')">Shares ↕</th>
+                <th onclick="sortBy('engagement_rate')">Eng. Rate ↕</th>
+                <th onclick="sortBy('spoken_language')">Language ↕</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">◎</div>
+        <div class="empty-msg">Ready to search</div>
+        <div class="empty-sub">Add keywords, choose platforms, and hit Run Search</div>
+      </div>
+
+    </div><!-- /panel-search -->
+
+    <!-- ── Account Panel ── -->
+    <div class="panel" id="panel-account">
+      <div class="search-card">
+        <span class="form-label">Creator / Account lookup</span>
+        <div class="account-search-row">
+          <input type="text" id="accountInput" placeholder="Enter handle e.g. mkbhd or @haikyufan_id"/>
+          <div class="platform-row" style="margin:0">
+            <button class="platform-btn active-tt" id="acc-btn-tt" onclick="toggleAccPlatform('tiktok',this,'active-tt')">♪ TikTok</button>
+            <button class="platform-btn active-yt" id="acc-btn-yt" onclick="toggleAccPlatform('youtube',this,'active-yt')">▶ YouTube</button>
+          </div>
+          <button class="search-btn" onclick="lookupAccount()">Lookup →</button>
+        </div>
+      </div>
+      <div id="accountResults">
+        <div class="empty-state">
+          <div class="empty-icon">◎</div>
+          <div class="empty-msg">Enter a creator handle</div>
+          <div class="empty-sub">Pulls follower count, total views, video count and more</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Saved Panel ── -->
+    <div class="panel" id="panel-saved">
+      <div id="savedList"></div>
+    </div>
+
+    <!-- ── Compare Panel ── -->
+    <div class="panel" id="panel-compare">
+      <div class="compare-grid">
+        <!-- Pane A -->
+        <div class="compare-pane">
+          <div class="search-card">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:#a78bfa;margin-bottom:14px;font-weight:700">◧ Search A</div>
+            <span class="form-label">Keywords</span>
+            <div class="form-row">
+              <div class="kw-wrap">
+                <input type="text" id="cmpKwInputA" placeholder="Keyword or #hashtag → Enter"/>
+              </div>
+            </div>
+            <div class="tags-row" id="cmpTagsA"></div>
+            <span class="form-label">Platforms</span>
+            <div class="platform-row">
+              <button class="platform-btn active-tt" id="cmp-a-tt" onclick="toggleCmpPlatform('A','tiktok',this,'active-tt')">♪ TikTok</button>
+              <button class="platform-btn active-yt" id="cmp-a-yt" onclick="toggleCmpPlatform('A','youtube',this,'active-yt')">▶ YouTube</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+              <div>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Region</label>
+                <div class="select-wrap"><select id="cmpRegionA">
+                  <optgroup label="North America"><option value="US">🇺🇸 United States (US)</option><option value="CA">🇨🇦 Canada (CA)</option></optgroup>
+                  <optgroup label="Latin America"><option value="BR">🇧🇷 Brazil (BR)</option><option value="AR">🇦🇷 Argentina (AR)</option><option value="CO">🇨🇴 Colombia (CO)</option><option value="CL">🇨🇱 Chile (CL)</option><option value="PE">🇵🇪 Peru (PE)</option><option value="VE">🇻🇪 Venezuela (VE)</option><option value="MX">🇲🇽 Mexico (MX)</option></optgroup>
+                  <optgroup label="Europe"><option value="GB">🇬🇧 United Kingdom (GB)</option><option value="DE">🇩🇪 Germany (DE)</option><option value="FR">🇫🇷 France (FR)</option><option value="IT">🇮🇹 Italy (IT)</option><option value="ES">🇪🇸 Spain (ES)</option><option value="NL">🇳🇱 Netherlands (NL)</option><option value="SE">🇸🇪 Sweden (SE)</option><option value="PL">🇵🇱 Poland (PL)</option><option value="TR">🇹🇷 Turkey (TR)</option></optgroup>
+                  <optgroup label="East Asia"><option value="JP">🇯🇵 Japan (JP)</option><option value="KR">🇰🇷 South Korea (KR)</option><option value="CN">🇨🇳 China (CN)</option><option value="TW">🇹🇼 Taiwan (TW)</option><option value="HK">🇭🇰 Hong Kong (HK)</option></optgroup>
+                  <optgroup label="Southeast Asia"><option value="ID" selected>🇮🇩 Indonesia (ID)</option><option value="PH">🇵🇭 Philippines (PH)</option><option value="TH">🇹🇭 Thailand (TH)</option><option value="VN">🇻🇳 Vietnam (VN)</option><option value="MY">🇲🇾 Malaysia (MY)</option><option value="SG">🇸🇬 Singapore (SG)</option></optgroup>
+                  <optgroup label="Oceania"><option value="AU">🇦🇺 Australia (AU)</option><option value="NZ">🇳🇿 New Zealand (NZ)</option></optgroup>
+                </select></div>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+                <input type="number" id="cmpCountA" value="20" min="5" max="50" step="5"/>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Pane B -->
+        <div class="compare-pane">
+          <div class="search-card">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--amber);margin-bottom:14px;font-weight:700">◨ Search B</div>
+            <span class="form-label">Keywords</span>
+            <div class="form-row">
+              <div class="kw-wrap">
+                <input type="text" id="cmpKwInputB" placeholder="Keyword or #hashtag → Enter"/>
+              </div>
+            </div>
+            <div class="tags-row" id="cmpTagsB"></div>
+            <span class="form-label">Platforms</span>
+            <div class="platform-row">
+              <button class="platform-btn active-tt" id="cmp-b-tt" onclick="toggleCmpPlatform('B','tiktok',this,'active-tt')">♪ TikTok</button>
+              <button class="platform-btn active-yt" id="cmp-b-yt" onclick="toggleCmpPlatform('B','youtube',this,'active-yt')">▶ YouTube</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+              <div>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Region</label>
+                <div class="select-wrap"><select id="cmpRegionB">
+                  <optgroup label="North America"><option value="US">🇺🇸 United States (US)</option><option value="CA">🇨🇦 Canada (CA)</option></optgroup>
+                  <optgroup label="Latin America"><option value="BR">🇧🇷 Brazil (BR)</option><option value="AR">🇦🇷 Argentina (AR)</option><option value="CO">🇨🇴 Colombia (CO)</option><option value="CL">🇨🇱 Chile (CL)</option><option value="PE">🇵🇪 Peru (PE)</option><option value="VE">🇻🇪 Venezuela (VE)</option><option value="MX">🇲🇽 Mexico (MX)</option></optgroup>
+                  <optgroup label="Europe"><option value="GB">🇬🇧 United Kingdom (GB)</option><option value="DE">🇩🇪 Germany (DE)</option><option value="FR">🇫🇷 France (FR)</option><option value="IT">🇮🇹 Italy (IT)</option><option value="ES">🇪🇸 Spain (ES)</option><option value="NL">🇳🇱 Netherlands (NL)</option><option value="SE">🇸🇪 Sweden (SE)</option><option value="PL">🇵🇱 Poland (PL)</option><option value="TR">🇹🇷 Turkey (TR)</option></optgroup>
+                  <optgroup label="East Asia"><option value="JP">🇯🇵 Japan (JP)</option><option value="KR">🇰🇷 South Korea (KR)</option><option value="CN">🇨🇳 China (CN)</option><option value="TW">🇹🇼 Taiwan (TW)</option><option value="HK">🇭🇰 Hong Kong (HK)</option></optgroup>
+                  <optgroup label="Southeast Asia"><option value="ID" selected>🇮🇩 Indonesia (ID)</option><option value="PH">🇵🇭 Philippines (PH)</option><option value="TH">🇹🇭 Thailand (TH)</option><option value="VN">🇻🇳 Vietnam (VN)</option><option value="MY">🇲🇾 Malaysia (MY)</option><option value="SG">🇸🇬 Singapore (SG)</option></optgroup>
+                  <optgroup label="Oceania"><option value="AU">🇦🇺 Australia (AU)</option><option value="NZ">🇳🇿 New Zealand (NZ)</option></optgroup>
+                </select></div>
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+                <input type="number" id="cmpCountB" value="20" min="5" max="50" step="5"/>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="compare-run-row">
+        <button class="run-btn" id="cmpRunBtn" onclick="runCompare()" style="width:auto;padding:14px 52px">
+          <span id="cmpRunLabel">Run Comparison</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l6 4-6 4V4z" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div id="cmpResults" style="display:none">
+        <div class="compare-summary" id="cmpSummary"></div>
+        <div class="compare-results-grid">
+          <div class="compare-result-pane">
+            <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:10px">◧ Results A</div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Creator</th><th>Video</th><th>Views</th><th>Eng.</th>
+            </tr></thead><tbody id="cmpTableA"></tbody></table></div>
+          </div>
+          <div class="compare-result-pane">
+            <div style="font-size:13px;font-weight:700;color:var(--amber);margin-bottom:10px">◨ Results B</div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Creator</th><th>Video</th><th>Views</th><th>Eng.</th>
+            </tr></thead><tbody id="cmpTableB"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-state" id="cmpEmpty">
+        <div class="empty-icon">⊞</div>
+        <div class="empty-msg">Compare two searches side by side</div>
+        <div class="empty-sub">Enter different keywords in each panel and hit Run Comparison</div>
+      </div>
+    </div>
+
+    <!-- ── Watchlist Panel ── -->
+    <div class="panel" id="panel-watchlist">
+      <div class="search-card" style="margin-bottom:24px">
+        <span class="form-label">Add Creator to Watchlist</span>
+        <div class="watchlist-add-row">
+          <input type="text" id="watchlistInput" placeholder="Enter handle e.g. mkbhd or @haikyufan_id"/>
+          <div class="select-wrap" style="min-width:140px">
+            <select id="watchlistPlatform">
+              <option value="youtube">▶ YouTube</option>
+              <option value="tiktok">📱 TikTok</option>
+            </select>
+          </div>
+          <button class="search-btn" onclick="addToWatchlist()">+ Add</button>
+        </div>
+      </div>
+      <div id="watchlistContent"></div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────
+let API_BASE = 'http://localhost:8001';
+document.getElementById('apiUrl').value = API_BASE;
+
+// ── Palette switcher ──────────────────────────────────────────────────────
+const PALETTES = [
+  { name: 'Introvert Core',
+    bg:'#f7ffe0', bg2:'#ffeee2', bg3:'#f2efc7', bg4:'#d2bba0',
+    accent:'#9f7e69', accent2:'#d2bba0', accent3:'#9f7e69',
+    text:'#3d2b1f', text2:'#9f7e69', btnText:'#f7ffe0',
+    border:'rgba(159,126,105,0.12)', border2:'rgba(159,126,105,0.22)' },
+  { name: 'Smart but Unhinged',
+    bg:'#f1faee', bg2:'#ffffff', bg3:'#e8f4f5', bg4:'#a8dadc',
+    accent:'#e63946', accent2:'#457b9d', accent3:'#1d3557',
+    text:'#1d3557', text2:'#457b9d', btnText:'#ffffff',
+    border:'rgba(29,53,87,0.12)', border2:'rgba(29,53,87,0.22)' },
+  { name: 'Tech Bro',
+    bg:'#080810', bg2:'#0f0f1a', bg3:'#171726', bg4:'#1f1f32',
+    accent:'#00d4ff', accent2:'#7DAACB', accent3:'#CE2626',
+    text:'#FFFDEB', text2:'#E8DBB3', btnText:'#080810',
+    border:'rgba(255,255,255,0.06)', border2:'rgba(255,255,255,0.11)' },
+  { name: 'Mentally in a Forest',
+    bg:'#333d29', bg2:'#414833', bg3:'#656d4a', bg4:'#a4ac86',
+    accent:'#b6ad90', accent2:'#c2c5aa', accent3:'#a68a64',
+    text:'#f2efc7', text2:'#c2c5aa', btnText:'#333d29',
+    border:'rgba(255,255,255,0.07)', border2:'rgba(255,255,255,0.13)' },
+  { name: 'Survival Mode',
+    bg:'#F1F3F4', bg2:'#FFFFFF', bg3:'#E8EAED', bg4:'#DADCE0',
+    accent:'#1A73E8', accent2:'#5F6368', accent3:'#1A73E8',
+    text:'#202124', text2:'#5F6368', btnText:'#FFFFFF',
+    border:'rgba(0,0,0,0.1)', border2:'rgba(0,0,0,0.18)' },
+];
+
+function applyPalette(idx) {
+  idx = parseInt(idx);
+  const p = PALETTES[idx];
+  const s = document.documentElement.style;
+  s.setProperty('--bg',       p.bg);
+  s.setProperty('--bg2',      p.bg2);
+  s.setProperty('--bg3',      p.bg3);
+  s.setProperty('--bg4',      p.bg4);
+  s.setProperty('--accent',   p.accent);
+  s.setProperty('--accent2',  p.accent2);
+  s.setProperty('--accent3',  p.accent3);
+  s.setProperty('--text',     p.text);
+  s.setProperty('--text2',    p.text2);
+  s.setProperty('--btn-text', p.btnText);
+  s.setProperty('--border',   p.border);
+  s.setProperty('--border2',  p.border2);
+  // Update trigger display
+  const triggerName = document.getElementById('triggerName');
+  if (triggerName) triggerName.textContent = p.name;
+  const triggerDots = document.getElementById('triggerDots');
+  if (triggerDots) triggerDots.innerHTML = makeDots(p);
+  // Update selected state in dropdown
+  document.querySelectorAll('.palette-opt').forEach((el, i) => el.classList.toggle('selected', i === idx));
+  localStorage.setItem('sh_palette', idx);
+  if (filteredResults && filteredResults.length > 0) renderCharts(filteredResults);
+}
+
+function makeDots(p) {
+  return [p.bg, p.accent, p.text].map(c =>
+    `<div class="p-dot" style="background:${c}"></div>`
+  ).join('');
+}
+
+function buildPaletteDropdown() {
+  const opts = document.getElementById('paletteOpts');
+  if (!opts) return;
+  opts.innerHTML = PALETTES.map((p, i) => `
+    <div class="palette-opt${i === parseInt(localStorage.getItem('sh_palette') || '0') ? ' selected' : ''}"
+         onclick="selectPalette(${i})">
+      <div class="p-dots">${makeDots(p)}</div>
+      <span>${p.name}</span>
+    </div>`).join('');
+  // Set trigger dots for current palette
+  const saved = parseInt(localStorage.getItem('sh_palette') || '0');
+  const triggerDots = document.getElementById('triggerDots');
+  if (triggerDots) triggerDots.innerHTML = makeDots(PALETTES[saved]);
+  const triggerName = document.getElementById('triggerName');
+  if (triggerName) triggerName.textContent = PALETTES[saved].name;
+}
+
+function togglePaletteDropdown() {
+  const opts = document.getElementById('paletteOpts');
+  const trigger = document.getElementById('paletteTrigger');
+  if (!opts) return;
+  const isOpen = opts.classList.toggle('open');
+  if (trigger) trigger.classList.toggle('open', isOpen);
+}
+
+function selectPalette(idx) {
+  applyPalette(idx);
+  const opts = document.getElementById('paletteOpts');
+  const trigger = document.getElementById('paletteTrigger');
+  if (opts) opts.classList.remove('open');
+  if (trigger) trigger.classList.remove('open');
+}
+
+document.addEventListener('click', e => {
+  const picker = document.getElementById('palettePicker');
+  if (picker && !picker.contains(e.target)) {
+    const opts = document.getElementById('paletteOpts');
+    const trigger = document.getElementById('paletteTrigger');
+    if (opts) opts.classList.remove('open');
+    if (trigger) trigger.classList.remove('open');
+  }
+});
+
+// ── State ─────────────────────────────────────────────────────────────────
+let keywords    = [];
+let variants    = [];   // search variants / translations
+let platforms   = ['tiktok', 'youtube'];
+let accPlatforms = ['tiktok', 'youtube'];
+let allResults  = [];
+let filteredResults = [];
+let sortKey     = 'views';
+let sortAsc     = false;
+let currentFilter = 'all';
+let collabFilterVal = 'all';
+let charts      = {};
+let currentJobId = null;
+
+// Build palette dropdown and apply saved palette
+buildPaletteDropdown();
+applyPalette(parseInt(localStorage.getItem('sh_palette') || '0'));
+let pollTimer   = null;
+
+// ── Nav ───────────────────────────────────────────────────────────────────
+function showPanel(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  btn.classList.add('active');
+  const titles = { search: 'Keyword Search', account: 'Account Deep-dive', saved: 'Saved Searches', compare: 'Compare', watchlist: 'Creator Watchlist' };
+  document.getElementById('page-title').textContent = titles[id] || id;
+  if (id === 'saved') renderSavedSearches();
+  if (id === 'watchlist') loadWatchlist();
+}
+
+// ── Health check ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
+    const d = await r.json();
+    setStatus('yt', d.youtube_configured);
+    setStatus('tt', d.tiktok_configured);
+  } catch {
+    setStatus('yt', false); setStatus('tt', false);
+  }
+}
+function setStatus(p, ok) {
+  document.getElementById(`${p}-dot`).className = 'dot ' + (ok ? 'on' : 'off');
+  document.getElementById(`${p}-status`).textContent = ok ? 'live' : 'mock';
+}
+checkHealth();
+setInterval(checkHealth, 30000);
+
+// ── Keywords ──────────────────────────────────────────────────────────────
+document.getElementById('kwInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const v = e.target.value.trim();
+  if (v && !keywords.includes(v)) { keywords.push(v); renderTags(); fetchVariantSuggestions(v); }
+  e.target.value = '';
+});
+
+document.getElementById('variantInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const v = e.target.value.trim();
+  if (v && !variants.includes(v)) { variants.push(v); renderVariantTags(); }
+  e.target.value = '';
+});
+
+function renderTags() {
+  document.getElementById('tagsRow').innerHTML = keywords.map((k, i) => `
+    <div class="tag">${esc(k)} <span class="tag-x" onclick="removeTag(${i})">×</span></div>
+  `).join('');
+}
+function removeTag(i) { keywords.splice(i, 1); renderTags(); }
+
+// ── Search variants ───────────────────────────────────────────────────────
+function renderVariantTags() {
+  document.getElementById('variantTagsRow').innerHTML = variants.map((v, i) =>
+    `<div class="variant-tag">${esc(v)} <span class="tag-x" onclick="removeVariant(${i})">×</span></div>`
+  ).join('');
+  const badge = document.getElementById('variantBadge');
+  if (variants.length) { badge.textContent = variants.length; badge.style.display = 'inline'; }
+  else badge.style.display = 'none';
+}
+function removeVariant(i) { variants.splice(i, 1); renderVariantTags(); }
+
+function toggleVariants() {
+  const sec = document.getElementById('variantsSection');
+  const btn = document.getElementById('variantsToggle');
+  const open = sec.classList.toggle('show');
+  btn.classList.toggle('active', open);
+  document.getElementById('variantsArrow').textContent = open ? '▼' : '▶';
+}
+
+async function fetchVariantSuggestions(kw) {
+  document.getElementById('suggestStrip').style.display = 'none';
+  try {
+    const r = await fetch(`${API_BASE}/suggest-variants`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: kw }),
+    });
+    const d = await r.json();
+    if (d.suggestions && d.suggestions.length) showSuggestions(kw, d.suggestions);
+  } catch { /* API offline — skip silently */ }
+}
+
+const LANG_DISPLAY = { ja: 'Japanese', ko: 'Korean', zh: 'Chinese', id: 'Indonesian', en: 'English' };
+
+function showSuggestions(kw, suggestions) {
+  document.getElementById('suggestKeyword').textContent = kw;
+  document.getElementById('suggestChips').innerHTML = suggestions.map(s => {
+    const safeV = s.variant.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const alreadyAdded = variants.includes(s.variant);
+    return `<span class="suggest-chip${alreadyAdded ? ' added' : ''}" onclick="addVariantChip('${safeV}', this)">
+      ${alreadyAdded ? '✓' : '+'} ${esc(s.variant)}
+      <span style="opacity:0.6;font-size:10px">${LANG_DISPLAY[s.lang] || s.lang}</span>
+    </span>`;
+  }).join('');
+  document.getElementById('suggestStrip').style.display = 'block';
+}
+
+function addVariantChip(v, el) {
+  if (!variants.includes(v)) {
+    variants.push(v);
+    renderVariantTags();
+    // Auto-open the variants section
+    const sec = document.getElementById('variantsSection');
+    if (!sec.classList.contains('show')) toggleVariants();
+  }
+  el.className = 'suggest-chip added';
+  el.innerHTML = `✓ ${esc(v)} <span style="opacity:0.6;font-size:10px">${el.querySelector('span')?.textContent || ''}</span>`;
+  el.onclick = null;
+}
+
+// ── Platforms ─────────────────────────────────────────────────────────────
+function togglePlatform(p, btn, cls) {
+  if (platforms.includes(p)) { platforms = platforms.filter(x => x !== p); btn.classList.remove(cls); }
+  else { platforms.push(p); btn.classList.add(cls); }
+}
+function toggleAccPlatform(p, btn, cls) {
+  if (accPlatforms.includes(p)) { accPlatforms = accPlatforms.filter(x => x !== p); btn.classList.remove(cls); }
+  else { accPlatforms.push(p); btn.classList.add(cls); }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────
+async function startSearch() {
+  const typed = document.getElementById('kwInput').value.trim();
+  if (typed && !keywords.includes(typed)) { keywords.push(typed); document.getElementById('kwInput').value = ''; renderTags(); }
+  if (!keywords.length) { toast('Add at least one keyword'); return; }
+  if (!platforms.length) { toast('Please select at least one platform'); return; }
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  document.getElementById('runLabel').innerHTML = '<span class="inline-spinner"></span> Searching…';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('statsStrip').style.display = 'none';
+  document.getElementById('chartsGrid').style.display = 'none';
+
+  const body = {
+    keywords,
+    platforms,
+    region: document.getElementById('fRegion').value,
+    count:  parseInt(document.getElementById('fCount').value) || 30,
+    min_views: parseInt(document.getElementById('fMinViews').value) || 0,
+    days_back: parseInt(document.getElementById('fDays').value) || 30,
+    detect_language: false,
+    language: 'any',
+    search_variants: [...variants],
+  };
+
+  try {
+    const r = await fetch(`${API_BASE}/search`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    currentJobId = d.job_id;
+    showProgress(true);
+    pollJob(currentJobId);
+  } catch(e) {
+    toast('Cannot reach API — running demo mode');
+    // Demo fallback with mock data (also generates results for each variant)
+    const allTerms = [keywords, ...variants.map(v => [v])].flat();
+    const mocked = generateMockResults(keywords, platforms, body.count, variants);
+    onResults(mocked);
+    btn.disabled = false;
+    document.getElementById('runLabel').innerHTML = 'Run Search';
+  }
+}
+
+function pollJob(jobId) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/jobs/${jobId}`);
+      const d = await r.json();
+      updateProgress(d.progress || 0, d.status);
+      if (d.status === 'done') {
+        clearInterval(pollTimer);
+        // Fetch full results
+        const r2 = await fetch(`${API_BASE}/jobs/${jobId}`);
+        const full = await r2.json();
+        onResults(full.results || []);
+        document.getElementById('runBtn').disabled = false;
+        document.getElementById('runLabel').innerHTML = 'Run Search';
+        showProgress(false);
+      }
+    } catch { clearInterval(pollTimer); }
+  }, 800);
+}
+
+function showProgress(show) {
+  document.getElementById('progressWrap').style.display = show ? 'block' : 'none';
+}
+function updateProgress(pct, status) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressMsg').textContent = status === 'done' ? 'Done!' : `Scraping… ${pct}%`;
+}
+
+function onResults(results) {
+  allResults = results;
+  filteredResults = results;
+  currentFilter = 'all';
+  collabFilterVal = 'all';
+  document.getElementById('collabFilter').value = 'all';
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-filter="all"]').classList.add('active');
+  renderStats(results);
+  renderCharts(results);
+  renderTable(results);
+  document.getElementById('resultsSection').style.display = 'block';
+  document.getElementById('statsStrip').style.display = 'grid';
+  document.getElementById('chartsGrid').style.display = 'grid';
+  toast(`✓ ${results.length} results found`);
+}
+
+// ── Mock data ─────────────────────────────────────────────────────────────
+function generateMockResults(kws, plats, count, variantsList = []) {
+  const out = [];
+  const ttHandles = ['animecrew.id','haikyufan_id','otaku.nusantara','anime.id.zone','rizkifandom'];
+  const ytChannels = ['AnimeCentralID','OtakuReviewID','AnimeNusantara','WeabooID','SakuraAnimasi'];
+  const songs = ['Fly High – BURNOUT SYNDROMES','Hikari Are – BURNOUT SYNDROMES','original sound'];
+  // All search terms = original keywords + variants
+  const allTerms = [...kws, ...variantsList];
+  let idx = 0;
+  for (const kw of allTerms) {
+    // Map variant back to its source keyword (first kw if it's a variant)
+    const mainKw = kws.includes(kw) ? kw : kws[0];
+    for (const plat of plats) {
+      for (let i = 0; i < Math.min(count, 8); i++) {
+        const views = Math.floor(Math.random()*3000000) + 10000;
+        const followers = Math.floor(Math.random()*500000) + 5000;
+        const likes = Math.floor(views * (0.05 + Math.random()*0.15));
+        const comments = Math.floor(views * 0.005);
+        const shares = plat === 'tiktok' ? Math.floor(views * 0.03) : 0;
+        const handle = plat === 'tiktok' ? ttHandles[idx%ttHandles.length] : ytChannels[idx%ytChannels.length];
+        const daysAgo = Math.floor(Math.random()*30);
+        const date = new Date(Date.now() - daysAgo*86400000).toISOString().slice(0,10);
+        out.push({
+          platform: plat, id: `mock_${plat}_${idx}`,
+          url: plat==='tiktok'?`https://tiktok.com/@${handle}/video/${idx}`:`https://youtube.com/watch?v=mock${idx}`,
+          thumbnail: `https://picsum.photos/seed/${plat}${idx}/320/${plat==='tiktok'?570:180}`,
+          title: `${kw} — ${plat==='tiktok'?'edit':'video'} #${i+1}`,
+          caption: `Amazing ${kw} content! #anime #fyp #${kw.replace(/\s/g,'')}`,
+          hashtags: ['anime','fyp',kw.replace(/\s/g,''),'indonesia'],
+          upload_date: date,
+          views, likes, comments, shares,
+          views_fmt: fmt(views), likes_fmt: fmt(likes), comments_fmt: fmt(comments),
+          account: {
+            id:`acc_${idx}`, username:`@${handle}`, display_name: handle.replace(/[._]/g,' '),
+            followers, followers_fmt: fmt(followers),
+            profile_url: plat==='tiktok'?`https://tiktok.com/@${handle}`:`https://youtube.com/@${handle}`,
+            verified: idx%4===0,
+          },
+          audio: plat==='tiktok'?{title:songs[idx%songs.length],artist:'',original:idx%3===0}:null,
+          engagement_rate: +((likes+comments+shares)/views*100).toFixed(2),
+          keyword: mainKw,
+          search_variant: kw,
+          collaboration: mockCollab(idx),
+        });
+        idx++;
+      }
+    }
+  }
+  return out;
+}
+
+function mockCollab(i) {
+  const t = i % 7;
+  if (t === 0) return { is_collab: true,  confidence: 'high',   signals: ['#ad in caption', 'onelink.to URL found'] };
+  if (t === 2) return { is_collab: true,  confidence: 'high',   signals: ['#paidpartnership in caption'] };
+  if (t === 3) return { is_collab: true,  confidence: 'medium', signals: ['discount/promo code detected'] };
+  if (t === 5) return { is_collab: true,  confidence: 'low',    signals: ['@mention in caption: @NikeID'] };
+  return             { is_collab: false, confidence: 'low',    signals: [] };
+}
+
+function fmt(n) {
+  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'K';
+  return String(n);
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function renderStats(results) {
+  const totalViews = results.reduce((s,r)=>s+r.views,0);
+  const avgEng = results.length ? (results.reduce((s,r)=>s+r.engagement_rate,0)/results.length).toFixed(2) : 0;
+  const ttCount = results.filter(r=>r.platform==='tiktok').length;
+  const ytCount = results.filter(r=>r.platform==='youtube').length;
+  const topViews = results.length ? Math.max(...results.map(r=>r.views)) : 0;
+  const uniqueCreators = new Set(results.map(r=>r.account.username)).size;
+  const collabCount = results.filter(r=>r.collaboration?.is_collab).length;
+  const strip = document.getElementById('statsStrip');
+  const stats = [
+    {v: results.length, l:'Total results'},
+    {v: fmt(totalViews), l:'Total views'},
+    {v: avgEng+'%', l:'Avg engagement', sub:'(likes + comments + shares) / views × 100'},
+    {v: ttCount+' / '+ytCount, l:'TikTok / YouTube'},
+    {v: fmt(topViews), l:'Top video views', sub:'highest single video view count in results'},
+    {v: uniqueCreators, l:'Unique creators', sub:'distinct accounts across all results'},
+    {v: collabCount, l:'Collabs found', sub:'brand/sponsored content detected'},
+  ];
+  strip.innerHTML = stats.map((s,i)=>`
+    <div class="stat-card" style="animation-delay:${i*0.06}s">
+      <div class="stat-val">${s.v}</div>
+      <div class="stat-lbl">${s.l}</div>
+      ${s.sub ? `<div class="stat-sub">${s.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────
+function getChartDefaults() {
+  const cs = getComputedStyle(document.documentElement);
+  const text2 = cs.getPropertyValue('--text2').trim() || '#888';
+  const border = cs.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
+  return {
+    plugins: { legend: { labels: { color: text2, font: { family: 'DM Sans', size: 11 } } } },
+    scales: {
+      x: { ticks: { color: text2, font: { family: 'DM Sans', size: 11 } }, grid: { color: border } },
+      y: { ticks: { color: text2, font: { family: 'DM Sans', size: 11 } }, grid: { color: border } },
+    }
+  };
+}
+
+function destroyCharts() {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+}
+
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function renderCharts(results) {
+  destroyCharts();
+  const cd = getChartDefaults();
+  const cs = getComputedStyle(document.documentElement);
+  const accentColor = cs.getPropertyValue('--accent').trim() || '#445D48';
+
+  // 1. Platform breakdown (doughnut)
+  const ttViews = results.filter(r=>r.platform==='tiktok').reduce((s,r)=>s+r.views,0);
+  const ytViews = results.filter(r=>r.platform==='youtube').reduce((s,r)=>s+r.views,0);
+  charts.platform = new Chart(document.getElementById('chartPlatform'), {
+    type: 'doughnut',
+    data: {
+      labels: ['TikTok','YouTube'],
+      datasets: [{ data:[ttViews,ytViews], backgroundColor:['rgba(0,200,255,0.75)','rgba(255,68,68,0.75)'], borderWidth:0 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins: cd.plugins, cutout:'65%' }
+  });
+
+  // 2. Top 8 by views (horizontal bar)
+  const top8 = [...results].sort((a,b)=>b.views-a.views).slice(0,8);
+  charts.top = new Chart(document.getElementById('chartTop'), {
+    type: 'bar',
+    data: {
+      labels: top8.map(r=>r.account.username.slice(0,12)),
+      datasets:[{
+        data: top8.map(r=>r.views),
+        backgroundColor: top8.map(r=>r.platform==='tiktok'?'rgba(0,200,255,0.65)':'rgba(255,68,68,0.65)'),
+        borderRadius: 4, borderWidth:0
+      }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales: cd.scales }
+  });
+
+  // 3. Engagement rate distribution (histogram buckets)
+  const buckets = [0,0,0,0,0]; // 0-2%, 2-5%, 5-10%, 10-20%, 20%+
+  results.forEach(r => {
+    const e = r.engagement_rate;
+    if(e<2)buckets[0]++; else if(e<5)buckets[1]++; else if(e<10)buckets[2]++; else if(e<20)buckets[3]++; else buckets[4]++;
+  });
+  charts.eng = new Chart(document.getElementById('chartEng'), {
+    type: 'bar',
+    data: {
+      labels:['<2%','2-5%','5-10%','10-20%','20%+'],
+      datasets:[{data:buckets, backgroundColor:'rgba(0,229,160,0.65)', borderRadius:4, borderWidth:0}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:cd.scales}
+  });
+
+  // 4. Posts by upload date (line)
+  const dateCounts = {};
+  results.forEach(r=>{ dateCounts[r.upload_date]=(dateCounts[r.upload_date]||0)+1; });
+  const sortedDates = Object.keys(dateCounts).sort();
+  charts.date = new Chart(document.getElementById('chartDate'), {
+    type:'line',
+    data:{
+      labels: sortedDates.map(d=>d.slice(5)),
+      datasets:[{
+        data: sortedDates.map(d=>dateCounts[d]),
+        borderColor: accentColor, backgroundColor: hexToRgba(accentColor, 0.1),
+        borderWidth:2, fill:true, tension:0.4, pointRadius:3, pointBackgroundColor: accentColor, pointBorderColor: accentColor
+      }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:cd.scales}
+  });
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────
+function filterResults(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function applyCollabFilter() {
+  collabFilterVal = document.getElementById('collabFilter').value;
+  applyFilters();
+}
+
+function applyFilters() {
+  let results = currentFilter === 'all' ? allResults : allResults.filter(r => r.platform === currentFilter);
+  if (collabFilterVal === 'collab')    results = results.filter(r => r.collaboration?.is_collab);
+  if (collabFilterVal === 'noncollab') results = results.filter(r => !r.collaboration?.is_collab);
+  filteredResults = results;
+  renderTable(filteredResults);
+}
+
+function sortBy(key) {
+  if(sortKey===key) sortAsc=!sortAsc; else { sortKey=key; sortAsc=false; }
+  renderTable(filteredResults);
+}
+
+function collabCell(collab) {
+  if (!collab || !collab.is_collab) return '';
+  const tip = (collab.signals || []).length ? 'Signals: ' + collab.signals.join(' · ') : 'Collaboration detected';
+  return `<span class="collab-tag" title="${esc(tip)}">✓</span>`;
+}
+
+function renderTable(results) {
+  const sorted = [...results].sort((a,b)=>{
+    let va = sortKey.includes('.') ? sortKey.split('.').reduce((o,k)=>o?.[k],a) : a[sortKey];
+    let vb = sortKey.includes('.') ? sortKey.split('.').reduce((o,k)=>o?.[k],b) : b[sortKey];
+    if(typeof va==='string') return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return sortAsc ? va-vb : vb-va;
+  });
+
+  document.getElementById('resultCount').textContent = `(${sorted.length})`;
+  const maxViews = sorted.length ? Math.max(...sorted.map(r=>r.views)) : 1;
+
+  document.getElementById('tableBody').innerHTML = sorted.map((r,i)=>{
+    const eng = r.engagement_rate;
+    const engClass = eng>=10?'eng-high':eng>=3?'eng-mid':'eng-low';
+    const badgeClass = r.platform==='tiktok'?'badge-tt':'badge-yt';
+    const platformLabel = r.platform==='tiktok'?'TikTok':'YouTube';
+    const avClass = `av${i%5}`;
+    const initials = (r.account.display_name||'??').slice(0,2).toUpperCase();
+    return `<tr style="animation:fadeUp 0.2s ease ${Math.min(i*0.025,0.4)}s both">
+      <td><span class="platform-badge ${badgeClass}">${platformLabel}</span></td>
+      <td>${collabCell(r.collaboration)}</td>
+      <td><div class="account-cell">
+        <div class="avatar ${avClass}">${initials}</div>
+        <div>
+          <div class="account-name"><a href="${r.account.profile_url||'#'}" target="_blank" class="account-link">${esc(r.account.username)}</a> ${r.account.verified?'<span class="verified">✓</span>':''}</div>
+          <div class="account-subs">${r.account.followers_fmt} followers</div>
+        </div>
+      </div></td>
+      <td><div class="video-cell">
+        <a href="${r.url}" target="_blank" class="video-title" title="${esc(r.title||r.caption)}">${esc(r.title||r.caption)}</a>
+        <div class="video-caption">${esc(r.caption)}</div>
+      </div></td>
+      <td><span class="num ${r.views>maxViews*0.6?'hot':''}">${r.views_fmt}</span></td>
+      <td><span class="num">${r.likes_fmt}</span></td>
+      <td><span class="num">${r.comments_fmt}</span></td>
+      <td><span class="num">${fmt(r.shares||0)}</span></td>
+      <td><span class="eng-pill ${engClass}">${eng}%</span></td>
+      <td><span class="lang-pill lang-${r.spoken_language||'unknown'}" title="${r.spoken_language_name||'Unknown'}">${(r.spoken_language_name||'Unknown')}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Account lookup ────────────────────────────────────────────────────────
+async function lookupAccount() {
+  const handle = document.getElementById('accountInput').value.trim().replace('@','');
+  if (!handle) { toast('Enter a handle first'); return; }
+  if (!accPlatforms.length) { toast('Please select at least one platform'); return; }
+
+  document.getElementById('accountResults').innerHTML = `<div class="empty-state"><div class="inline-spinner" style="width:28px;height:28px;border:3px solid var(--border2);border-top-color:var(--accent)"></div><div style="margin-top:12px;color:var(--text2)">Looking up @${handle}…</div></div>`;
+
+  try {
+    const r = await fetch(`${API_BASE}/account`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({handle, platforms: accPlatforms})
+    });
+    const d = await r.json();
+    renderAccountCards(handle, d);
+  } catch {
+    // Mock fallback
+    const mock = {};
+    if(accPlatforms.includes('youtube')) mock.youtube = {
+      display_name: handle, description: 'Demo account data (API not connected)',
+      subscribers: 142000, total_views: 8500000, video_count: 87,
+      country:'ID', profile_url:`https://youtube.com/@${handle}`,
+    };
+    if(accPlatforms.includes('tiktok')) mock.tiktok = {
+      note:'TikTok account lookup requires a live backend session'
+    };
+    renderAccountCards(handle, mock);
+  }
+}
+
+function renderAccountCards(handle, data) {
+  if(!Object.keys(data).length) {
+    document.getElementById('accountResults').innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><div class="empty-msg">No data found for @${handle}</div></div>`;
+    return;
+  }
+  const avColors = ['#00d4ff','#00e5a0','#f59e0b'];
+  let html = '';
+  Object.entries(data).forEach(([platform, info], idx) => {
+    if(info.note) {
+      html += `<div class="account-card"><div class="account-avatar-lg" style="background:${avColors[idx%3]}">${handle.slice(0,2).toUpperCase()}</div><div class="account-meta"><h2>@${handle}</h2><div class="handle"><span class="platform-badge ${platform==='tiktok'?'badge-tt':'badge-yt'}">${platform}</span></div><p style="margin-top:12px;color:var(--text2);font-size:13px">${info.note}</p></div></div>`;
+      return;
+    }
+    const subs = info.subscribers || info.followers || 0;
+    const views = info.total_views || 0;
+    const videos = info.video_count || 0;
+    html += `<div class="account-card">
+      <div class="account-avatar-lg" style="background:${avColors[idx%3]}">${(info.display_name||handle).slice(0,2).toUpperCase()}</div>
+      <div class="account-meta">
+        <h2>${info.display_name||handle}</h2>
+        <div class="handle"><a href="${info.profile_url||'#'}" target="_blank" style="color:var(--tt);text-decoration:none">@${handle}</a> &nbsp;<span class="platform-badge ${platform==='tiktok'?'badge-tt':'badge-yt'}">${platform}</span> ${info.country?`<span style="margin-left:8px;font-size:11px;color:var(--text2)">${info.country}</span>`:''}</div>
+        ${info.description?`<p style="font-size:12px;color:var(--text2);margin-top:8px;max-width:500px;line-height:1.6">${info.description.slice(0,180)}…</p>`:''}
+        <div class="account-stats-row" style="margin-top:16px">
+          <div class="account-stat"><div class="val">${fmt(subs)}</div><div class="lbl">Subscribers</div></div>
+          <div class="account-stat"><div class="val">${fmt(views)}</div><div class="lbl">Total views</div></div>
+          ${videos?`<div class="account-stat"><div class="val">${videos}</div><div class="lbl">Videos</div></div>`:''}
+          ${subs&&views?`<div class="account-stat"><div class="val">${(views/subs).toFixed(1)}x</div><div class="lbl">Views/sub ratio</div></div>`:''}
+        </div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('accountResults').innerHTML = html;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if(!allResults.length) return;
+  const headers = ['platform','url','title','views','likes','comments','shares','engagement_rate',
+                   'upload_date','account.username','account.followers','keyword','hashtags',
+                   'collab_detected','collab_confidence','collab_signals'];
+  const rows = allResults.map(r=>[
+    r.platform, r.url, `"${(r.title||'').replace(/"/g,'""')}"`, r.views, r.likes, r.comments, r.shares,
+    r.engagement_rate, r.upload_date, r.account.username, r.account.followers, r.keyword,
+    (r.hashtags||[]).join(' '),
+    r.collaboration?.is_collab ? 'true' : 'false',
+    r.collaboration?.confidence || '',
+    `"${(r.collaboration?.signals||[]).join('; ')}"`,
+  ]);
+  const csv = [headers,...rows].map(r=>r.join(',')).join('\n');
+  dl('socialscope_export.csv', csv, 'text/csv');
+  toast('CSV exported!');
+}
+function exportJSON() {
+  if(!allResults.length) return;
+  dl('socialscope_export.json', JSON.stringify(allResults,null,2), 'application/json');
+  toast('JSON exported!');
+}
+function dl(name, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content],{type}));
+  a.download = name; a.click();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+// ── Saved Searches ────────────────────────────────────────────────────────
+function saveCurrentSearch() {
+  if (!keywords.length) { toast('Add at least one keyword first'); return; }
+  const saves = JSON.parse(localStorage.getItem('ss_saved') || '[]');
+  saves.unshift({
+    id: Date.now(),
+    keywords: [...keywords],
+    variants: [...variants],
+    platforms: [...platforms],
+    region: document.getElementById('fRegion').value,
+    count: parseInt(document.getElementById('fCount').value) || 30,
+    minViews: parseInt(document.getElementById('fMinViews').value) || 0,
+    days: parseInt(document.getElementById('fDays').value) || 30,
+    savedAt: new Date().toISOString(),
+  });
+  localStorage.setItem('ss_saved', JSON.stringify(saves));
+  toast('Search saved!');
+}
+
+function renderSavedSearches() {
+  const saves = JSON.parse(localStorage.getItem('ss_saved') || '[]');
+  const el = document.getElementById('savedList');
+  if (!saves.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">◈</div>
+      <div class="empty-msg">No saved searches yet</div>
+      <div class="empty-sub">Hit "Save Search" after configuring a search to bookmark it here</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = `<div class="saved-list">${saves.map(s => `
+    <div class="saved-item">
+      <div class="saved-item-info">
+        <div class="saved-kws">${s.keywords.map(k => `<span style="background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--accent);margin-right:4px">${esc(k)}</span>`).join('')}</div>
+        <div class="saved-meta">
+          <span>${s.platforms.join(', ')}</span>
+          <span>${s.region}</span>
+          <span>${s.count} results</span>
+          ${s.minViews ? `<span>min ${fmt(s.minViews)} views</span>` : ''}
+          <span>${s.days === 9999 ? 'all time' : 'last ' + s.days + ' days'}</span>
+          ${s.variants && s.variants.length ? `<span style="color:#c084fc">${s.variants.length} variant${s.variants.length > 1 ? 's' : ''}</span>` : ''}
+          <span>Saved ${new Date(s.savedAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+      <div class="saved-actions">
+        <button class="btn-run" onclick="runSavedSearch(${s.id})">▶ Run</button>
+        <button class="btn-del" onclick="deleteSavedSearch(${s.id})">✕ Delete</button>
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function runSavedSearch(id) {
+  const saves = JSON.parse(localStorage.getItem('ss_saved') || '[]');
+  const s = saves.find(x => x.id === id);
+  if (!s) return;
+  keywords = [...s.keywords];
+  variants = [...(s.variants || [])];
+  platforms = [...s.platforms];
+  renderTags();
+  renderVariantTags();
+  document.getElementById('fRegion').value = s.region;
+  document.getElementById('fCount').value = s.count;
+  document.getElementById('fMinViews').value = s.minViews;
+  document.getElementById('fDays').value = s.days;
+  ['tiktok', 'youtube'].forEach(p => {
+    const btnId = p === 'tiktok' ? 'btn-tt' : 'btn-yt';
+    const cls   = p === 'tiktok' ? 'active-tt' : 'active-yt';
+    const b = document.getElementById(btnId);
+    if (platforms.includes(p)) b.classList.add(cls); else b.classList.remove(cls);
+  });
+  const searchNavBtn = document.querySelector('.nav-item');
+  showPanel('search', searchNavBtn);
+  startSearch();
+}
+
+function deleteSavedSearch(id) {
+  let saves = JSON.parse(localStorage.getItem('ss_saved') || '[]');
+  saves = saves.filter(x => x.id !== id);
+  localStorage.setItem('ss_saved', JSON.stringify(saves));
+  renderSavedSearches();
+  toast('Search deleted');
+}
+
+// ── Compare ───────────────────────────────────────────────────────────────
+let cmpKwA = [], cmpKwB = [];
+let cmpPlatA = ['tiktok', 'youtube'], cmpPlatB = ['tiktok', 'youtube'];
+
+document.getElementById('cmpKwInputA').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const v = e.target.value.trim();
+  if (v && !cmpKwA.includes(v)) { cmpKwA.push(v); renderCmpTags('A'); }
+  e.target.value = '';
+});
+document.getElementById('cmpKwInputB').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const v = e.target.value.trim();
+  if (v && !cmpKwB.includes(v)) { cmpKwB.push(v); renderCmpTags('B'); }
+  e.target.value = '';
+});
+
+function renderCmpTags(side) {
+  const kws = side === 'A' ? cmpKwA : cmpKwB;
+  document.getElementById(`cmpTags${side}`).innerHTML = kws.map((k, i) =>
+    `<div class="tag">${esc(k)} <span class="tag-x" onclick="removeCmpTag('${side}',${i})">×</span></div>`
+  ).join('');
+}
+function removeCmpTag(side, i) {
+  if (side === 'A') cmpKwA.splice(i, 1); else cmpKwB.splice(i, 1);
+  renderCmpTags(side);
+}
+function toggleCmpPlatform(side, p, btn, cls) {
+  const arr = side === 'A' ? cmpPlatA : cmpPlatB;
+  if (arr.includes(p)) {
+    if (arr.length > 1) { arr.splice(arr.indexOf(p), 1); btn.classList.remove(cls); }
+  } else { arr.push(p); btn.classList.add(cls); }
+}
+
+async function runCompare() {
+  const typedA = document.getElementById('cmpKwInputA').value.trim();
+  if (typedA && !cmpKwA.includes(typedA)) { cmpKwA.push(typedA); document.getElementById('cmpKwInputA').value = ''; renderCmpTags('A'); }
+  const typedB = document.getElementById('cmpKwInputB').value.trim();
+  if (typedB && !cmpKwB.includes(typedB)) { cmpKwB.push(typedB); document.getElementById('cmpKwInputB').value = ''; renderCmpTags('B'); }
+
+  if (!cmpKwA.length && !cmpKwB.length) { toast('Add keywords to at least one panel'); return; }
+
+  const btn = document.getElementById('cmpRunBtn');
+  btn.disabled = true;
+  document.getElementById('cmpRunLabel').innerHTML = '<span class="inline-spinner"></span> Comparing…';
+  document.getElementById('cmpEmpty').style.display = 'none';
+  document.getElementById('cmpResults').style.display = 'none';
+
+  const makeBody = (kws, plats, regionId, countId) => ({
+    keywords: kws.length ? kws : ['_placeholder'],
+    platforms: plats,
+    region: document.getElementById(regionId).value,
+    count: parseInt(document.getElementById(countId).value) || 20,
+    min_views: 0, days_back: 30, detect_language: false, language: 'any',
+  });
+
+  const bodyA = makeBody(cmpKwA, cmpPlatA, 'cmpRegionA', 'cmpCountA');
+  const bodyB = makeBody(cmpKwB, cmpPlatB, 'cmpRegionB', 'cmpCountB');
+
+  let resultsA = [], resultsB = [];
+  try {
+    const [rA, rB] = await Promise.all([
+      fetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyA) }),
+      fetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyB) }),
+    ]);
+    const [dA, dB] = await Promise.all([rA.json(), rB.json()]);
+    resultsA = dA.results || (cmpKwA.length ? generateMockResults(cmpKwA, cmpPlatA, bodyA.count) : []);
+    resultsB = dB.results || (cmpKwB.length ? generateMockResults(cmpKwB, cmpPlatB, bodyB.count) : []);
+  } catch {
+    resultsA = cmpKwA.length ? generateMockResults(cmpKwA, cmpPlatA, bodyA.count) : [];
+    resultsB = cmpKwB.length ? generateMockResults(cmpKwB, cmpPlatB, bodyB.count) : [];
+  }
+
+  renderCompareResults(resultsA, resultsB);
+  btn.disabled = false;
+  document.getElementById('cmpRunLabel').innerHTML = 'Run Comparison';
+}
+
+function renderCompareResults(a, b) {
+  const totalViewsA = a.reduce((s, r) => s + r.views, 0);
+  const totalViewsB = b.reduce((s, r) => s + r.views, 0);
+  const avgEngA = a.length ? (a.reduce((s, r) => s + r.engagement_rate, 0) / a.length) : 0;
+  const avgEngB = b.length ? (b.reduce((s, r) => s + r.engagement_rate, 0) / b.length) : 0;
+  const topA = a.length ? a.reduce((best, r) => r.views > best.views ? r : best, a[0]) : null;
+  const topB = b.length ? b.reduce((best, r) => r.views > best.views ? r : best, b[0]) : null;
+  const ttA = a.filter(r => r.platform === 'tiktok').length;
+  const ytA = a.filter(r => r.platform === 'youtube').length;
+  const ttB = b.filter(r => r.platform === 'tiktok').length;
+  const ytB = b.filter(r => r.platform === 'youtube').length;
+  const labelA = esc(cmpKwA[0] || 'Search A');
+  const labelB = esc(cmpKwB[0] || 'Search B');
+
+  const metric = (label, valA, valB, winnerFn) => `
+    <div class="compare-metric">
+      <div class="compare-metric-label">${label}</div>
+      <div class="compare-metric-row">
+        <div><div class="cval a">${valA}</div><div class="clabel">${labelA}</div></div>
+        <div><div class="cval b">${valB}</div><div class="clabel">${labelB}</div></div>
+      </div>
+      ${winnerFn ? `<div class="compare-winner">${winnerFn()}</div>` : ''}
+    </div>`;
+
+  document.getElementById('cmpSummary').innerHTML = `
+    <h3>Comparison Summary — <span style="color:#a78bfa">${labelA}</span> vs <span style="color:var(--amber)">${labelB}</span></h3>
+    <div class="compare-summary-grid">
+      ${metric('Total Views', fmt(totalViewsA), fmt(totalViewsB), () => totalViewsA >= totalViewsB ? '◧ ' + labelA + ' leads' : '◨ ' + labelB + ' leads')}
+      ${metric('Avg Engagement Rate', avgEngA.toFixed(2) + '%', avgEngB.toFixed(2) + '%', () => avgEngA >= avgEngB ? '◧ ' + labelA + ' leads' : '◨ ' + labelB + ' leads')}
+      <div class="compare-metric">
+        <div class="compare-metric-label">Top Creator</div>
+        <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;align-items:center">
+          ${topA ? `<div style="font-size:12px"><span class="cval a" style="font-size:13px">${esc(topA.account.username)}</span> <span style="color:var(--text2);font-size:11px">${fmt(topA.views)} views</span></div>` : '<span style="color:var(--text2);font-size:11px">No data for A</span>'}
+          ${topB ? `<div style="font-size:12px"><span class="cval b" style="font-size:13px">${esc(topB.account.username)}</span> <span style="color:var(--text2);font-size:11px">${fmt(topB.views)} views</span></div>` : '<span style="color:var(--text2);font-size:11px">No data for B</span>'}
+        </div>
+      </div>
+      ${metric('Total Videos', a.length, b.length, () => a.length >= b.length ? '◧ ' + labelA + ' more' : '◨ ' + labelB + ' more')}
+      ${metric('TikTok Videos', ttA, ttB, null)}
+      ${metric('YouTube Videos', ytA, ytB, null)}
+    </div>`;
+
+  const buildRows = results => results.slice(0, 20).map((r, i) => `
+    <tr style="animation:fadeUp 0.15s ease ${i * 0.02}s both">
+      <td><div class="account-cell">
+        <div class="avatar av${i % 5}" style="width:26px;height:26px;font-size:10px">${(r.account.display_name || '??').slice(0, 2).toUpperCase()}</div>
+        <div><div class="account-name" style="font-size:12px">${esc(r.account.username)}</div>
+        <div style="font-size:10px;color:var(--text2)">${r.account.followers_fmt}</div></div>
+      </div></td>
+      <td><div style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--tt)">${esc(r.title || r.caption)}</div></td>
+      <td><span class="num" style="font-size:12px">${r.views_fmt}</span></td>
+      <td><span class="eng-pill ${r.engagement_rate >= 10 ? 'eng-high' : r.engagement_rate >= 3 ? 'eng-mid' : 'eng-low'}" style="font-size:10px">${r.engagement_rate}%</span></td>
+    </tr>`).join('');
+
+  document.getElementById('cmpTableA').innerHTML = a.length ? buildRows(a) : `<tr><td colspan="4" style="text-align:center;color:var(--text2);padding:24px">No results</td></tr>`;
+  document.getElementById('cmpTableB').innerHTML = b.length ? buildRows(b) : `<tr><td colspan="4" style="text-align:center;color:var(--text2);padding:24px">No results</td></tr>`;
+  document.getElementById('cmpResults').style.display = 'block';
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────
+function loadWatchlist() {
+  const list = JSON.parse(localStorage.getItem('ss_watchlist') || '[]');
+  const el = document.getElementById('watchlistContent');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">★</div>
+      <div class="empty-msg">Your watchlist is empty</div>
+      <div class="empty-sub">Add creator handles above to track their stats</div>
+    </div>`;
+    return;
+  }
+  const avBgs = ['#00d4ff', '#ff6b35', '#00e5a0', '#f59e0b', '#a855f7'];
+  el.innerHTML = `<div class="watchlist-list">${list.map((c, i) => {
+    const hasStats = c.followers != null;
+    const detailHtml = hasStats ? `
+      <div class="watchlist-detail-grid">
+        <div class="watchlist-stat"><div class="watchlist-stat-val">${fmt(c.followers)}</div><div class="watchlist-stat-lbl">Followers</div></div>
+        <div class="watchlist-stat"><div class="watchlist-stat-val">${fmt(c.totalViews)}</div><div class="watchlist-stat-lbl">Total Views</div></div>
+        ${c.videoCount != null ? `<div class="watchlist-stat"><div class="watchlist-stat-val">${c.videoCount}</div><div class="watchlist-stat-lbl">Videos</div></div>` : ''}
+        ${c.followers && c.totalViews ? `<div class="watchlist-stat"><div class="watchlist-stat-val">${(c.totalViews / c.followers).toFixed(1)}x</div><div class="watchlist-stat-lbl">Views / Follower</div></div>` : ''}
+        ${c.country ? `<div class="watchlist-stat"><div class="watchlist-stat-val">${esc(c.country)}</div><div class="watchlist-stat-lbl">Country</div></div>` : ''}
+      </div>
+      ${c.profileUrl ? `<a href="${esc(c.profileUrl)}" target="_blank" class="watchlist-profile-link" onclick="event.stopPropagation()">View profile on ${c.platform} →</a>` : ''}
+    ` : `<div style="color:var(--text2);font-size:12px;padding:4px 0">No stats yet — click <strong>↻ Check now</strong> to fetch</div>`;
+    return `
+    <div class="watchlist-item" id="wl-item-${c.id}" onclick="toggleWatchlistItem(${c.id}, event)">
+      <div class="watchlist-avatar" style="background:${avBgs[i % 5]}">${c.handle.slice(0, 2).toUpperCase()}</div>
+      <div class="watchlist-info">
+        <div class="watchlist-handle">@${esc(c.handle)} <span class="toggle-icon" id="wl-toggle-${c.id}">▼</span></div>
+        <div class="watchlist-stats">
+          <span class="platform-badge ${c.platform === 'tiktok' ? 'badge-tt' : 'badge-yt'}">${c.platform}</span>
+          ${hasStats ? `<span>${fmt(c.followers)} followers</span><span>${fmt(c.totalViews)} total views</span>` : '<span>Not checked yet</span>'}
+          ${c.lastChecked ? `<span>Updated ${new Date(c.lastChecked).toLocaleDateString()}</span>` : ''}
+          <span style="font-size:10px">Added ${new Date(c.addedAt).toLocaleDateString()}</span>
+        </div>
+        <div class="watchlist-detail" id="wl-detail-${c.id}">${detailHtml}</div>
+      </div>
+      <div class="watchlist-actions">
+        <button class="btn-check" id="wl-check-${c.id}" onclick="checkWatchlistCreator(${c.id}, event)">↻ Check now</button>
+        <button class="btn-del" onclick="removeFromWatchlist(${c.id}, event)">✕</button>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function toggleWatchlistItem(id, event) {
+  if (event && event.target.closest('.watchlist-actions')) return;
+  const item = document.getElementById(`wl-item-${id}`);
+  if (!item) return;
+  item.classList.toggle('expanded');
+}
+
+function addToWatchlist() {
+  const handle = document.getElementById('watchlistInput').value.trim().replace('@', '');
+  const platform = document.getElementById('watchlistPlatform').value;
+  if (!handle) { toast('Enter a handle first'); return; }
+  const list = JSON.parse(localStorage.getItem('ss_watchlist') || '[]');
+  if (list.some(c => c.handle === handle && c.platform === platform)) { toast('Already in watchlist'); return; }
+  list.push({ id: Date.now(), handle, platform, followers: null, totalViews: null, videoCount: null, country: null, profileUrl: null, lastChecked: null, addedAt: new Date().toISOString() });
+  localStorage.setItem('ss_watchlist', JSON.stringify(list));
+  document.getElementById('watchlistInput').value = '';
+  loadWatchlist();
+  toast(`@${handle} added to watchlist`);
+}
+
+function removeFromWatchlist(id, event) {
+  if (event) event.stopPropagation();
+  let list = JSON.parse(localStorage.getItem('ss_watchlist') || '[]');
+  list = list.filter(c => c.id !== id);
+  localStorage.setItem('ss_watchlist', JSON.stringify(list));
+  loadWatchlist();
+  toast('Removed from watchlist');
+}
+
+async function checkWatchlistCreator(id, event) {
+  if (event) event.stopPropagation();
+  const list = JSON.parse(localStorage.getItem('ss_watchlist') || '[]');
+  const creator = list.find(c => c.id === id);
+  if (!creator) return;
+  const btn = document.getElementById(`wl-check-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+
+  // Show loading state in detail panel if it's expanded
+  const detailEl = document.getElementById(`wl-detail-${id}`);
+  const item = document.getElementById(`wl-item-${id}`);
+  if (detailEl) {
+    detailEl.innerHTML = `<div style="color:var(--text2);font-size:12px;display:flex;align-items:center;gap:8px"><span class="inline-spinner" style="width:14px;height:14px;border-width:2px;border-top-color:var(--accent)"></span> Fetching stats…</div>`;
+    if (item && !item.classList.contains('expanded')) item.classList.add('expanded');
+  }
+
+  try {
+    const r = await fetch(`${API_BASE}/account`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle: creator.handle, platforms: [creator.platform] }),
+    });
+    const d = await r.json();
+    const info = d[creator.platform];
+    if (info && !info.note) {
+      creator.followers  = info.subscribers || info.followers || 0;
+      creator.totalViews = info.total_views || 0;
+      creator.videoCount = info.video_count || null;
+      creator.country    = info.country || null;
+      creator.profileUrl = info.profile_url || null;
+    }
+  } catch {
+    // Mock fallback when API unavailable
+    creator.followers  = Math.floor(Math.random() * 900000) + 10000;
+    creator.totalViews = Math.floor(Math.random() * 50000000) + 100000;
+    creator.videoCount = Math.floor(Math.random() * 200) + 10;
+    creator.country    = creator.platform === 'youtube' ? 'ID' : null;
+    creator.profileUrl = creator.platform === 'youtube'
+      ? `https://youtube.com/@${creator.handle}`
+      : `https://tiktok.com/@${creator.handle}`;
+  }
+  creator.lastChecked = new Date().toISOString();
+  const idx = list.findIndex(c => c.id === id);
+  list[idx] = creator;
+  localStorage.setItem('ss_watchlist', JSON.stringify(list));
+  // Re-render and re-expand the checked item
+  loadWatchlist();
+  const expanded = document.getElementById(`wl-item-${id}`);
+  if (expanded) expanded.classList.add('expanded');
+  toast(`Stats updated for @${creator.handle}`);
+}
+</script>
+</body>
+</html>
