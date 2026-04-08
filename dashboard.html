@@ -722,7 +722,7 @@ a.post-link:hover { border-color: var(--accent); }
     <div class="topbar-right">
       <div class="api-url-badge">
         API:
-        <input type="text" id="apiUrl" value="http://localhost:8001" onchange="API_BASE=this.value;checkHealth()"/>
+        <input type="text" id="apiUrl" value="https://social-hamster.onrender.com" onchange="API_BASE=this.value;checkHealth()"/>
       </div>
     </div>
   </div>
@@ -1092,7 +1092,7 @@ a.post-link:hover { border-color: var(--accent); }
 
 <script>
 // ── Config ────────────────────────────────────────────────────────────────
-let API_BASE = 'http://localhost:8001';
+let API_BASE = 'https://social-hamster.onrender.com';
 document.getElementById('apiUrl').value = API_BASE;
 
 // ── Palette switcher ──────────────────────────────────────────────────────
