@@ -149,8 +149,9 @@ body::after {
 .api-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .api-row:last-child { margin-bottom: 0; }
 .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.dot.on  { background: var(--green); box-shadow: 0 0 6px rgba(0,229,160,0.5); }
-.dot.off { background: var(--text2); }
+.dot.on    { background: var(--green); box-shadow: 0 0 6px rgba(0,229,160,0.5); }
+.dot.off   { background: #e05c5c; }
+.dot.amber { background: var(--amber); box-shadow: 0 0 6px rgba(212,151,74,0.5); }
 .api-label { color: var(--text2); }
 .api-val   { color: var(--text); font-weight: 500; display: flex; align-items: center; gap: 5px; }
 
@@ -459,6 +460,28 @@ a.post-link:hover { border-color: var(--accent); }
 .empty-icon { font-size: 40px; margin-bottom: 14px; opacity: 0.25; }
 .empty-msg { font-size: 16px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
 .empty-sub { font-size: 13px; opacity: 0.6; }
+
+/* ── Platform error banners ── */
+.platform-error-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: color-mix(in srgb, #e05c5c 10%, var(--bg2));
+  border: 1px solid color-mix(in srgb, #e05c5c 30%, transparent);
+  border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+  font-size: 13px; color: var(--text);
+}
+.platform-error-banner .err-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.platform-error-banner .err-body { flex: 1; }
+.platform-error-banner .err-title { font-weight: 600; margin-bottom: 2px; }
+.platform-error-banner .err-detail { color: var(--text2); font-size: 12px; }
+.all-failed-state {
+  text-align: center; padding: 60px 24px;
+  background: color-mix(in srgb, #e05c5c 8%, var(--bg2));
+  border: 1px solid color-mix(in srgb, #e05c5c 25%, transparent);
+  border-radius: 16px; margin-top: 16px;
+}
+.all-failed-state .fail-icon { font-size: 36px; margin-bottom: 12px; }
+.all-failed-state .fail-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.all-failed-state .fail-detail { font-size: 13px; color: var(--text2); }
 
 .inline-spinner {
   width: 18px; height: 18px;
@@ -882,6 +905,9 @@ a.post-link:hover { border-color: var(--accent); }
         </div>
       </div>
 
+      <!-- Platform error banners -->
+      <div id="platformErrorBanners" style="display:none;margin-bottom:16px"></div>
+
       <!-- Results table -->
       <div id="resultsSection" style="display:none">
         <div class="results-header">
@@ -1236,15 +1262,36 @@ async function checkHealth() {
   try {
     const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
     const d = await r.json();
-    setStatus('yt', d.youtube_configured);
-    setStatus('tt', d.tiktok_configured);
+    setStatus('yt', d.youtube_status || (d.youtube_configured ? 'live' : 'no_key'));
+    setStatus('tt', d.tiktok_status || (d.tiktok_configured ? 'live' : 'no_proxy'));
   } catch {
-    setStatus('yt', false); setStatus('tt', false);
+    setStatus('yt', 'error: API unreachable'); setStatus('tt', 'error: API unreachable');
   }
 }
-function setStatus(p, ok) {
-  document.getElementById(`${p}-dot`).className = 'dot ' + (ok ? 'on' : 'off');
-  document.getElementById(`${p}-status`).textContent = ok ? 'live' : 'mock';
+function setStatus(p, statusStr) {
+  const dot = document.getElementById(`${p}-dot`);
+  const label = document.getElementById(`${p}-status`);
+  if (statusStr === 'live') {
+    dot.className = 'dot on';
+    label.textContent = 'live';
+    label.removeAttribute('title');
+  } else if (statusStr === 'no_key') {
+    dot.className = 'dot off';
+    label.textContent = 'no key';
+    label.removeAttribute('title');
+  } else if (statusStr === 'no_proxy') {
+    dot.className = 'dot amber';
+    label.textContent = 'no proxy';
+    label.removeAttribute('title');
+  } else if (statusStr && statusStr.startsWith('error:')) {
+    dot.className = 'dot off';
+    label.textContent = 'error';
+    label.title = statusStr.slice(6).trim();
+  } else {
+    dot.className = 'dot off';
+    label.textContent = statusStr || 'unknown';
+    label.removeAttribute('title');
+  }
 }
 checkHealth();
 setInterval(checkHealth, 30000);
@@ -1354,6 +1401,8 @@ async function startSearch() {
   document.getElementById('resultsSection').style.display = 'none';
   document.getElementById('statsStrip').style.display = 'none';
   document.getElementById('chartsGrid').style.display = 'none';
+  document.getElementById('platformErrorBanners').style.display = 'none';
+  document.getElementById('platformErrorBanners').innerHTML = '';
 
   const body = {
     keywords,
@@ -1376,13 +1425,10 @@ async function startSearch() {
     showProgress(true);
     pollJob(currentJobId);
   } catch(e) {
-    toast('Cannot reach API — running demo mode');
-    // Demo fallback with mock data (also generates results for each variant)
-    const allTerms = [keywords, ...variants.map(v => [v])].flat();
-    const mocked = generateMockResults(keywords, platforms, body.count, variants);
-    onResults(mocked);
+    toast('Cannot reach API — is the backend running?');
     btn.disabled = false;
     document.getElementById('runLabel').innerHTML = 'Run Search';
+    document.getElementById('emptyState').style.display = 'block';
   }
 }
 
@@ -1398,7 +1444,7 @@ function pollJob(jobId) {
         // Fetch full results
         const r2 = await fetch(`${API_BASE}/jobs/${jobId}`);
         const full = await r2.json();
-        onResults(full.results || []);
+        onResults(full.results || [], full.platform_errors || {});
         document.getElementById('runBtn').disabled = false;
         document.getElementById('runLabel').innerHTML = 'Run Search';
         showProgress(false);
@@ -1416,7 +1462,7 @@ function updateProgress(pct, status) {
   document.getElementById('progressMsg').textContent = status === 'done' ? 'Done!' : `Scraping… ${pct}%`;
 }
 
-function onResults(results) {
+function onResults(results, platformErrors = {}) {
   allResults = results;
   filteredResults = results;
   currentFilter = 'all';
@@ -1424,6 +1470,49 @@ function onResults(results) {
   document.getElementById('collabFilter').value = 'all';
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-filter="all"]').classList.add('active');
+
+  // Render platform error banners
+  const bannerWrap = document.getElementById('platformErrorBanners');
+  const errorEntries = Object.entries(platformErrors);
+  if (errorEntries.length > 0) {
+    const searchedPlatforms = platforms.length ? platforms : [...new Set(results.map(r => r.platform))];
+    const allFailed = errorEntries.length >= searchedPlatforms.length && results.length === 0;
+    if (allFailed) {
+      bannerWrap.innerHTML = `
+        <div class="all-failed-state">
+          <div class="fail-icon">⚠️</div>
+          <div class="fail-title">All platforms failed — no results returned</div>
+          <div class="fail-detail">${errorEntries.map(([p, msg]) =>
+            `<strong>${p.charAt(0).toUpperCase()+p.slice(1)}:</strong> ${esc(msg)}`
+          ).join('<br>')}</div>
+        </div>`;
+      bannerWrap.style.display = 'block';
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('resultsSection').style.display = 'none';
+      document.getElementById('statsStrip').style.display = 'none';
+      document.getElementById('chartsGrid').style.display = 'none';
+      return;
+    }
+    bannerWrap.innerHTML = errorEntries.map(([platform, msg]) => {
+      const pLabel = platform.charAt(0).toUpperCase() + platform.slice(1);
+      let hint = '';
+      if (msg.includes('proxy') || msg.includes('session')) hint = 'Check your proxy (port 7890).';
+      else if (msg.includes('API key') || msg.includes('not configured')) hint = 'Set the API key in your .env file.';
+      else if (msg.includes('unreachable')) hint = 'Check your network connection.';
+      return `<div class="platform-error-banner">
+        <div class="err-icon">⚠️</div>
+        <div class="err-body">
+          <div class="err-title">${esc(pLabel)} returned no results — ${esc(msg)}</div>
+          ${hint ? `<div class="err-detail">${hint}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    bannerWrap.style.display = 'block';
+  } else {
+    bannerWrap.style.display = 'none';
+    bannerWrap.innerHTML = '';
+  }
+
   renderStats(results);
   renderCharts(results);
   renderTable(results);

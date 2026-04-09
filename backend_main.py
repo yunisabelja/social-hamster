@@ -240,7 +240,7 @@ async def detect_tt_lang(url):
 
 async def search_youtube(keyword, count=30, days_back=30, region="ID", language="id", detect_lang=True):
     if not YOUTUBE_API_KEY:
-        return [_myt(keyword,i) for i in range(min(count,10))]
+        raise ValueError("YouTube API key not configured")
     pub = (datetime.utcnow()-timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     async with httpx.AsyncClient() as c:
         yt_params = {
@@ -285,45 +285,29 @@ async def search_youtube(keyword, count=30, days_back=30, region="ID", language=
         results.append(row)
     return results
 
-def _myt(keyword,i):
-    chs=["AnimeCentralID","OtakuReviewID","AnimeNusantara","WeabooID","SakuraAnimasi"]
-    langs=["id","id","id","en","ja"]; v=500000-i*40000+i*7777; s=50000+i*8000; lg=langs[i%len(langs)]
-    _captions = [
-        f"Best {keyword} content #{i+1}",
-        f"Best {keyword} content #{i+1} #ad — check out onelink.to/animeshop",
-        f"Best {keyword} moments! Use code ANIME20 for 20% off. #sponsored",
-        f"Amazing {keyword} edit! @NikeID @CrunchyrollID link in bio",
-    ]
-    cap = _captions[i % 4]
-    row = {"platform":"youtube","id":f"yt_mock_{i}","url":f"https://youtube.com/watch?v=mock{i}",
-        "thumbnail":f"https://picsum.photos/seed/yt{i}/320/180",
-        "title":f"{keyword} — Amazing Moments #{i+1}","caption":cap,
-        "hashtags":[keyword.replace(" ",""),"anime","fyp"],
-        "upload_date":(datetime.now()-timedelta(days=i*3)).strftime("%Y-%m-%d"),
-        "views":v,"likes":int(v*.08),"comments":int(v*.005),"shares":0,
-        "views_fmt":fmt(v),"likes_fmt":fmt(int(v*.08)),"comments_fmt":fmt(int(v*.005)),
-        "spoken_language":lg,"spoken_language_name":LANG_NAMES.get(lg,lg.upper()),
-        "account":{"id":f"ch_{i}","username":f"@{chs[i%len(chs)]}","display_name":chs[i%len(chs)],
-            "followers":s,"followers_fmt":fmt(s),"profile_url":f"https://youtube.com/@{chs[i%len(chs)]}","verified":i%3==0},
-        "engagement_rate":round((int(v*.08)+int(v*.005))/v*100,2),"keyword":keyword,"region":"ID"}
-    row["collaboration"] = detect_collaboration(row)
-    return row
-
 async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
     try:
         from TikTokApi import TikTokApi
-        results=[]
+    except ImportError:
+        raise ImportError("TikTokApi not installed")
+    results=[]
+    try:
         async with TikTokApi() as api:
             print(f"[TikTok] Creating session (internal timeout=90s)…")
-            await asyncio.wait_for(
-                api.create_sessions(
-                    ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
-                    num_sessions=1, sleep_after=3,
-                    timeout=90000,
-                    proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
-                ),
-                timeout=120
-            )
+            try:
+                await asyncio.wait_for(
+                    api.create_sessions(
+                        ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
+                        num_sessions=1, sleep_after=3,
+                        timeout=90000,
+                        proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
+                    ),
+                    timeout=120
+                )
+            except asyncio.TimeoutError as e:
+                raise ConnectionError(f"TikTok session failed: timed out after 120s") from e
+            except Exception as e:
+                raise ConnectionError(f"TikTok session failed: {str(e)}") from e
             print(f"[TikTok] Session OK — searching '{keyword}'")
             async for video in api.search.search_type(keyword, "item", count=count):
                 try:
@@ -356,42 +340,14 @@ async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
                     results.append(row)
                 except Exception as ve:
                     print(f"  [TikTok] skipping video: {ve}"); continue
-        return results
-    except asyncio.TimeoutError:
-        print(f"[TikTok] ERROR: session creation timed out after 60s — falling back to mock")
-        return [_mtt(keyword,i) for i in range(min(count,10))]
+    except (ImportError, ConnectionError):
+        raise
     except Exception as e:
-        print(f"[TikTok] ERROR: {type(e).__name__}: {e}")
-        return [_mtt(keyword,i) for i in range(min(count,10))]
-
-def _mtt(keyword,i):
-    hs=["animecrew.id","haikyufan_id","otaku.nusantara","anime.id.zone","rizkifandom"]
-    langs=["id","id","id","en","ja"]; v=2000000-i*150000+i*13333; f=120000+i*15000; lg=langs[i%len(langs)]
-    _captions = [
-        f"✨ {keyword} best moments!! #anime #fyp",
-        f"✨ {keyword} edit!! #ad #paidpartnership @CrunchyrollID #fyp",
-        f"🔥 {keyword} collab!! in partnership with @GenshinImpact promo code WEEB30 #fyp",
-        f"💫 {keyword} vibes!! link in bio @AnimeStoreid #anime #fyp",
-    ]
-    cap = _captions[i % 4]
-    row = {"platform":"tiktok","id":f"tt_mock_{i}","url":f"https://tiktok.com/@{hs[i%len(hs)]}/video/mock{i}",
-        "thumbnail":f"https://picsum.photos/seed/tt{i}/320/570",
-        "title":f"{keyword} edit {i+1} ✨","caption":cap,
-        "hashtags":[keyword.replace(" ",""),"anime","fyp","indonesia"],
-        "upload_date":(datetime.now()-timedelta(days=i*2)).strftime("%Y-%m-%d"),
-        "views":v,"likes":int(v*.12),"comments":int(v*.008),"shares":int(v*.04),
-        "views_fmt":fmt(v),"likes_fmt":fmt(int(v*.12)),"comments_fmt":fmt(int(v*.008)),
-        "spoken_language":lg,"spoken_language_name":LANG_NAMES.get(lg,lg.upper()),
-        "account":{"id":f"u_{i}","username":f"@{hs[i%len(hs)]}",
-            "display_name":hs[i%len(hs)].replace("."," ").title(),
-            "followers":f,"followers_fmt":fmt(f),"profile_url":f"https://tiktok.com/@{hs[i%len(hs)]}","verified":i%4==0},
-        "audio":{"title":"Fly High","artist":"BURNOUT SYNDROMES","original":False},
-        "engagement_rate":round((int(v*.12)+int(v*.008)+int(v*.04))/v*100,2),"keyword":keyword,"region":"ID"}
-    row["collaboration"] = detect_collaboration(row)
-    return row
+        raise ConnectionError(f"TikTok unreachable: {str(e)}") from e
+    return results
 
 async def run_search_job(job_id, req):
-    jobs[job_id].update({"status":"running","progress":0})
+    jobs[job_id].update({"status":"running","progress":0,"platform_errors":{}})
     all_results = []
 
     # Expand each keyword with its variants so we search all of them
@@ -417,7 +373,10 @@ async def run_search_job(job_id, req):
             if req.language and req.language!="any":
                 r=[x for x in r if x.get("spoken_language") in (req.language,"unknown")]
             all_results.extend(r)
-        except Exception as e: jobs[job_id].setdefault("errors",[]).append(str(e))
+        except Exception as e:
+            msg = str(e)
+            jobs[job_id]["platform_errors"][platform] = msg
+            print(f"[Job {job_id}] {platform} error: {msg}")
         done+=1; jobs[job_id]["progress"]=int(done/total*100)
     seen,unique=set(),[]
     for r in all_results:
@@ -431,7 +390,8 @@ async def run_search_job(job_id, req):
         "total":len(unique),"total_views":tv,"total_views_fmt":fmt(tv),
         "avg_engagement":round(sum(r["engagement_rate"] for r in unique)/len(unique),2) if unique else 0,
         "by_platform":bp,"by_language":lc,
-        "top_posts":sorted(unique,key=lambda x:x["views"],reverse=True)[:3]}})
+        "top_posts":sorted(unique,key=lambda x:x["views"],reverse=True)[:3]},
+        "platform_errors":jobs[job_id].get("platform_errors",{})})
 
 @asynccontextmanager
 async def lifespan(app):
@@ -446,11 +406,51 @@ app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_
 def root(): return {"status":"ok","service":"SocialScope API v2.0"}
 
 @app.get("/health")
-def health():
-    return {"status":"ok","youtube_configured":bool(YOUTUBE_API_KEY),
-            "tiktok_configured":bool(TIKTOK_MS_TOKEN),
-            "whisper_loaded":_whisper_model is not None,
-            "timestamp":datetime.utcnow().isoformat()}
+async def health():
+    # YouTube: attempt a real test call
+    if not YOUTUBE_API_KEY:
+        youtube_status = "no_key"
+    else:
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={"key": YOUTUBE_API_KEY, "id": "dQw4w9WgXcQ", "part": "id"},
+                    timeout=6,
+                )
+            if r.status_code == 200:
+                youtube_status = "live"
+            else:
+                data = r.json()
+                msg = data.get("error", {}).get("message", f"HTTP {r.status_code}")
+                youtube_status = f"error: {msg}"
+        except Exception as e:
+            youtube_status = f"error: {str(e)}"
+
+    # TikTok: check if port 7890 proxy is reachable
+    proxy_host = "127.0.0.1"
+    proxy_port = 7890
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(proxy_host, proxy_port), timeout=3
+        )
+        writer.close()
+        await writer.wait_closed()
+        tiktok_status = "live"
+    except asyncio.TimeoutError:
+        tiktok_status = "no_proxy"
+    except ConnectionRefusedError:
+        tiktok_status = "no_proxy"
+    except Exception as e:
+        tiktok_status = f"error: {str(e)}"
+
+    return {
+        "status": "ok",
+        "youtube_status": youtube_status,
+        "tiktok_status": tiktok_status,
+        "whisper_loaded": _whisper_model is not None,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 @app.post("/suggest-variants")
 def suggest_variants(req: VariantRequest):
