@@ -745,7 +745,7 @@ a.post-link:hover { border-color: var(--accent); }
     <div class="topbar-right">
       <div class="api-url-badge">
         API:
-        <input type="text" id="apiUrl" value="https://social-hamster.onrender.com" onchange="API_BASE=this.value;checkHealth()"/>
+        <input type="text" id="apiUrl" value="https://social-hamster.onrender.com" oninput="API_BASE=this.value.trim();checkHealth()"/>
       </div>
     </div>
   </div>
