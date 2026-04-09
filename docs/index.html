@@ -1121,6 +1121,14 @@ a.post-link:hover { border-color: var(--accent); }
 let API_BASE = 'https://social-hamster.onrender.com';
 document.getElementById('apiUrl').value = API_BASE;
 
+// Wrap fetch to inject ngrok bypass header when talking to an ngrok URL
+function apiFetch(url, opts = {}) {
+  if (url.includes('ngrok')) {
+    opts.headers = { 'ngrok-skip-browser-warning': '1', ...(opts.headers || {}) };
+  }
+  return fetch(url, opts);
+}
+
 // ── Palette switcher ──────────────────────────────────────────────────────
 const PALETTES = [
   { name: 'Introvert Core',
@@ -1260,7 +1268,7 @@ function showPanel(id, btn) {
 // ── Health check ──────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
-    const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
+    const r = await apiFetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
     const d = await r.json();
     setStatus('yt', d.youtube_status || (d.youtube_configured ? 'live' : 'no_key'));
     setStatus('tt', d.tiktok_status || (d.tiktok_configured ? 'live' : 'no_proxy'));
@@ -1340,7 +1348,7 @@ function toggleVariants() {
 async function fetchVariantSuggestions(kw) {
   document.getElementById('suggestStrip').style.display = 'none';
   try {
-    const r = await fetch(`${API_BASE}/suggest-variants`, {
+    const r = await apiFetch(`${API_BASE}/suggest-variants`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keyword: kw }),
     });
@@ -1417,7 +1425,7 @@ async function startSearch() {
   };
 
   try {
-    const r = await fetch(`${API_BASE}/search`, {
+    const r = await apiFetch(`${API_BASE}/search`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const d = await r.json();
@@ -1436,13 +1444,13 @@ function pollJob(jobId) {
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try {
-      const r = await fetch(`${API_BASE}/jobs/${jobId}`);
+      const r = await apiFetch(`${API_BASE}/jobs/${jobId}`);
       const d = await r.json();
       updateProgress(d.progress || 0, d.status);
       if (d.status === 'done') {
         clearInterval(pollTimer);
         // Fetch full results
-        const r2 = await fetch(`${API_BASE}/jobs/${jobId}`);
+        const r2 = await apiFetch(`${API_BASE}/jobs/${jobId}`);
         const full = await r2.json();
         onResults(full.results || [], full.platform_errors || {});
         document.getElementById('runBtn').disabled = false;
@@ -1794,7 +1802,7 @@ async function lookupAccount() {
   document.getElementById('accountResults').innerHTML = `<div class="empty-state"><div class="inline-spinner" style="width:28px;height:28px;border:3px solid var(--border2);border-top-color:var(--accent)"></div><div style="margin-top:12px;color:var(--text2)">Looking up @${handle}…</div></div>`;
 
   try {
-    const r = await fetch(`${API_BASE}/account`,{
+    const r = await apiFetch(`${API_BASE}/account`,{
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({handle, platforms: accPlatforms})
     });
@@ -2030,8 +2038,8 @@ async function runCompare() {
   let resultsA = [], resultsB = [];
   try {
     const [rA, rB] = await Promise.all([
-      fetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyA) }),
-      fetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyB) }),
+      apiFetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyA) }),
+      apiFetch(`${API_BASE}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyB) }),
     ]);
     const [dA, dB] = await Promise.all([rA.json(), rB.json()]);
     resultsA = dA.results || (cmpKwA.length ? generateMockResults(cmpKwA, cmpPlatA, bodyA.count) : []);
@@ -2196,7 +2204,7 @@ async function checkWatchlistCreator(id, event) {
   }
 
   try {
-    const r = await fetch(`${API_BASE}/account`, {
+    const r = await apiFetch(`${API_BASE}/account`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ handle: creator.handle, platforms: [creator.platform] }),
     });
