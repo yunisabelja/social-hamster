@@ -286,64 +286,82 @@ async def search_youtube(keyword, count=30, days_back=30, region="ID", language=
     return results
 
 async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
+    """Run TikTok search in a dedicated thread+event-loop to avoid Playwright/uvicorn conflicts on Windows."""
     try:
-        from TikTokApi import TikTokApi
+        from TikTokApi import TikTokApi  # noqa: F401 — verify installed before spinning up thread
     except ImportError:
         raise ImportError("TikTokApi not installed")
-    results=[]
     try:
-        async with TikTokApi() as api:
-            print(f"[TikTok] Creating session (internal timeout=90s)…")
-            try:
-                await asyncio.wait_for(
-                    api.create_sessions(
-                        ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
-                        num_sessions=1, sleep_after=3,
-                        timeout=90000,
-                        proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
-                    ),
-                    timeout=120
-                )
-            except asyncio.TimeoutError as e:
-                raise ConnectionError(f"TikTok session failed: timed out after 120s") from e
-            except Exception as e:
-                raise ConnectionError(f"TikTok session failed: {str(e)}") from e
-            print(f"[TikTok] Session OK — searching '{keyword}'")
-            async for video in api.search.search_type(keyword, "item", count=count):
-                try:
-                    d=video.as_dict; au=video.author
-                    st=d.get("statsV2") or d.get("stats",{})
-                    ast=d.get("authorStats",{}); mu=d.get("music",{})
-                    au_d=d.get("author",{})
-                    v=int(st.get("playCount",0) or 0); l=int(st.get("diggCount",0) or 0)
-                    co=int(st.get("commentCount",0) or 0); sh=int(st.get("shareCount",0) or 0)
-                    f=int(ast.get("followerCount",0) or 0)
-                    desc=d.get("desc","")
-                    url=f"https://www.tiktok.com/@{au.username}/video/{video.id}"
-                    lang = await detect_tt_lang(url) if detect_lang else "unknown"
-                    row = {
-                        "platform":"tiktok","id":str(video.id),"url":url,
-                        "thumbnail":d.get("video",{}).get("cover",""),
-                        "title":desc[:100],"caption":desc,"hashtags":ht(desc),
-                        "upload_date":datetime.fromtimestamp(int(d.get("createTime",0))).strftime("%Y-%m-%d"),
-                        "views":v,"likes":l,"comments":co,"shares":sh,
-                        "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
-                        "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
-                        "account":{"id":str(au.user_id),"username":f"@{au.username}",
-                            "display_name":au_d.get("nickname",au.username),"followers":f,"followers_fmt":fmt(f),
-                            "profile_url":f"https://www.tiktok.com/@{au.username}",
-                            "verified":au_d.get("verified",False)},
-                        "audio":{"title":mu.get("title",""),"artist":mu.get("authorName",""),"original":mu.get("original",False)},
-                        "engagement_rate":er(l,co,sh,v),"keyword":keyword,"region":region,
-                    }
-                    row["collaboration"] = detect_collaboration(row)
-                    results.append(row)
-                except Exception as ve:
-                    print(f"  [TikTok] skipping video: {ve}"); continue
+        return await asyncio.to_thread(_tiktok_search_sync, keyword, count, region, detect_lang)
     except (ImportError, ConnectionError):
         raise
     except Exception as e:
-        raise ConnectionError(f"TikTok unreachable: {str(e)}") from e
+        msg = str(e) or repr(e) or type(e).__name__
+        raise ConnectionError(f"TikTok unreachable: {msg}") from e
+
+def _tiktok_search_sync(keyword, count, region, detect_lang):
+    """Blocking wrapper: runs its own event loop so Playwright never touches uvicorn's loop."""
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_tiktok_search_inner(keyword, count, region, detect_lang))
+    finally:
+        loop.close()
+
+async def _tiktok_search_inner(keyword, count, region, detect_lang):
+    from TikTokApi import TikTokApi
+    results = []
+    async with TikTokApi() as api:
+        print(f"[TikTok] Creating session (internal timeout=90s)…")
+        try:
+            await asyncio.wait_for(
+                api.create_sessions(
+                    ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
+                    num_sessions=1, sleep_after=3,
+                    timeout=90000,
+                    proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
+                ),
+                timeout=120
+            )
+        except asyncio.TimeoutError as e:
+            raise ConnectionError("TikTok session failed: timed out after 120s") from e
+        except Exception as e:
+            msg = str(e) or repr(e) or type(e).__name__
+            raise ConnectionError(f"TikTok session failed: {msg}") from e
+        print(f"[TikTok] Session OK — searching '{keyword}'")
+        async for video in api.search.search_type(keyword, "item", count=count):
+            try:
+                d=video.as_dict; au=video.author
+                st=d.get("statsV2") or d.get("stats",{})
+                ast=d.get("authorStats",{}); mu=d.get("music",{})
+                au_d=d.get("author",{})
+                v=int(st.get("playCount",0) or 0); l=int(st.get("diggCount",0) or 0)
+                co=int(st.get("commentCount",0) or 0); sh=int(st.get("shareCount",0) or 0)
+                f=int(ast.get("followerCount",0) or 0)
+                desc=d.get("desc","")
+                url=f"https://www.tiktok.com/@{au.username}/video/{video.id}"
+                lang = await detect_tt_lang(url) if detect_lang else "unknown"
+                row = {
+                    "platform":"tiktok","id":str(video.id),"url":url,
+                    "thumbnail":d.get("video",{}).get("cover",""),
+                    "title":desc[:100],"caption":desc,"hashtags":ht(desc),
+                    "upload_date":datetime.fromtimestamp(int(d.get("createTime",0))).strftime("%Y-%m-%d"),
+                    "views":v,"likes":l,"comments":co,"shares":sh,
+                    "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
+                    "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
+                    "account":{"id":str(au.user_id),"username":f"@{au.username}",
+                        "display_name":au_d.get("nickname",au.username),"followers":f,"followers_fmt":fmt(f),
+                        "profile_url":f"https://www.tiktok.com/@{au.username}",
+                        "verified":au_d.get("verified",False)},
+                    "audio":{"title":mu.get("title",""),"artist":mu.get("authorName",""),"original":mu.get("original",False)},
+                    "engagement_rate":er(l,co,sh,v),"keyword":keyword,"region":region,
+                }
+                row["collaboration"] = detect_collaboration(row)
+                results.append(row)
+            except Exception as ve:
+                print(f"  [TikTok] skipping video: {ve}"); continue
     return results
 
 async def run_search_job(job_id, req):
