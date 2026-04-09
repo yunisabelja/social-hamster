@@ -461,6 +461,16 @@ a.post-link:hover { border-color: var(--accent); }
 .empty-msg { font-size: 16px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
 .empty-sub { font-size: 13px; opacity: 0.6; }
 
+/* ── Search mode pills ── */
+.mode-pills { display: flex; border: 1px solid var(--border2); border-radius: 8px; overflow: hidden; }
+.mode-pill {
+  padding: 4px 14px; font-size: 12px; font-weight: 600; font-family: var(--font);
+  border: none; background: none; cursor: pointer; color: var(--text2);
+  transition: all 0.15s;
+}
+.mode-pill.active { background: var(--accent); color: var(--btn-text); }
+.mode-pill:not(.active):hover { background: var(--bg3); color: var(--text); }
+
 /* ── Platform error banners ── */
 .platform-error-banner {
   display: flex; align-items: flex-start; gap: 10px;
@@ -764,17 +774,25 @@ a.post-link:hover { border-color: var(--accent); }
         </div>
         <div class="tags-row" id="tagsRow"></div>
 
-        <!-- Suggestion strip (auto-shown when variants are found) -->
+        <!-- Official names strip (auto-shown after keyword lookup) -->
         <div class="suggest-strip" id="suggestStrip">
-          <div class="suggest-label">Suggested translations for "<strong id="suggestKeyword"></strong>" — click to add as search variant:</div>
+          <div class="suggest-label" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span>Official names for "<strong id="suggestKeyword"></strong>" — tick to include in search:</span>
+            <span id="suggestSource" style="font-size:10px;color:var(--text2);opacity:0.7"></span>
+          </div>
           <div class="suggest-chips" id="suggestChips"></div>
         </div>
 
         <!-- Variants toggle + collapsible section -->
-        <button class="variants-toggle" id="variantsToggle" onclick="toggleVariants()">
-          <span id="variantsArrow">▶</span> Search variants
-          <span class="variant-badge" id="variantBadge"></span>
-        </button>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="variants-toggle" id="variantsToggle" onclick="toggleVariants()">
+            <span id="variantsArrow">▶</span> Search variants
+            <span class="variant-badge" id="variantBadge"></span>
+          </button>
+          <button class="icon-btn" id="lookupBtn" onclick="fetchOfficialNames()" style="font-size:12px;padding:6px 12px">
+            🔍 Find official names
+          </button>
+        </div>
         <div class="variants-section" id="variantsSection">
           <div class="variants-helper">
             Add the same keyword in other languages to find more results across all platforms.<br>
@@ -796,8 +814,9 @@ a.post-link:hover { border-color: var(--accent); }
             <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Region</label>
             <div class="select-wrap">
               <select id="fRegion">
+                <option value="GLOBAL">🌍 Global (all regions)</option>
                 <optgroup label="North America">
-                  <option value="US">🇺🇸 United States (US)</option>
+                  <option value="US" selected>🇺🇸 United States (US)</option>
                   <option value="CA">🇨🇦 Canada (CA)</option>
                 </optgroup>
                 <optgroup label="Latin America">
@@ -828,7 +847,7 @@ a.post-link:hover { border-color: var(--accent); }
                   <option value="HK">🇭🇰 Hong Kong (HK)</option>
                 </optgroup>
                 <optgroup label="Southeast Asia">
-                  <option value="ID" selected>🇮🇩 Indonesia (ID)</option>
+                  <option value="ID">🇮🇩 Indonesia (ID)</option>
                   <option value="PH">🇵🇭 Philippines (PH)</option>
                   <option value="TH">🇹🇭 Thailand (TH)</option>
                   <option value="VN">🇻🇳 Vietnam (VN)</option>
@@ -843,7 +862,8 @@ a.post-link:hover { border-color: var(--accent); }
             </div>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:4px;display:block">Max results</label>
+            <div style="font-size:10px;color:var(--text2);opacity:0.7;margin-bottom:5px">Max videos per keyword per platform</div>
             <input type="number" id="fCount" value="30" min="5" max="100" step="5"/>
           </div>
           <div>
@@ -864,6 +884,19 @@ a.post-link:hover { border-color: var(--accent); }
           </div>
         </div>
 
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.08em">Search mode</span>
+            <div class="mode-pills" id="searchModePills">
+              <button class="mode-pill active" id="pill-fuzzy" onclick="setSearchMode('fuzzy')">Fuzzy</button>
+              <button class="mode-pill" id="pill-exact" onclick="setSearchMode('exact')">Exact</button>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input type="checkbox" id="detectLangCheck" style="accent-color:var(--accent)"/>
+            Detect language
+          </label>
+        </div>
         <div class="search-btn-row">
           <button class="run-btn" id="runBtn" onclick="startSearch()">
             <span id="runLabel">Run Search</span>
@@ -1017,7 +1050,7 @@ a.post-link:hover { border-color: var(--accent); }
                 </select></div>
               </div>
               <div>
-                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Max results</label>
                 <input type="number" id="cmpCountA" value="20" min="5" max="50" step="5"/>
               </div>
             </div>
@@ -1052,7 +1085,7 @@ a.post-link:hover { border-color: var(--accent); }
                 </select></div>
               </div>
               <div>
-                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Results per keyword</label>
+                <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Max results</label>
                 <input type="number" id="cmpCountB" value="20" min="5" max="50" step="5"/>
               </div>
             </div>
@@ -1308,7 +1341,7 @@ setInterval(checkHealth, 30000);
 document.getElementById('kwInput').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const v = e.target.value.trim();
-  if (v && !keywords.includes(v)) { keywords.push(v); renderTags(); fetchVariantSuggestions(v); }
+  if (v && !keywords.includes(v)) { keywords.push(v); renderTags(); }
   e.target.value = '';
 });
 
@@ -1345,30 +1378,45 @@ function toggleVariants() {
   document.getElementById('variantsArrow').textContent = open ? '▼' : '▶';
 }
 
-async function fetchVariantSuggestions(kw) {
+// ── Search mode ───────────────────────────────────────────────────────────
+let searchMode = 'fuzzy';
+function setSearchMode(mode) {
+  searchMode = mode;
+  document.getElementById('pill-fuzzy').classList.toggle('active', mode === 'fuzzy');
+  document.getElementById('pill-exact').classList.toggle('active', mode === 'exact');
+}
+
+// ── Official name lookup ──────────────────────────────────────────────────
+async function fetchOfficialNames() {
+  const kw = keywords[keywords.length - 1] || document.getElementById('kwInput').value.trim();
+  if (!kw) { toast('Add a keyword first'); return; }
   document.getElementById('suggestStrip').style.display = 'none';
+  const btn = document.getElementById('lookupBtn');
+  btn.textContent = '⏳ Looking up…'; btn.disabled = true;
   try {
-    const r = await apiFetch(`${API_BASE}/suggest-variants`, {
+    const r = await apiFetch(`${API_BASE}/lookup-variants`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keyword: kw }),
     });
     const d = await r.json();
-    if (d.suggestions && d.suggestions.length) showSuggestions(kw, d.suggestions);
-  } catch { /* API offline — skip silently */ }
+    if (d.variants && d.variants.length) showOfficialNames(kw, d.variants, d.source);
+    else toast('No official names found for this title');
+  } catch(e) { toast('Lookup failed — is the backend running?'); }
+  btn.textContent = '🔍 Find official names'; btn.disabled = false;
 }
 
-const LANG_DISPLAY = { ja: 'Japanese', ko: 'Korean', zh: 'Chinese', id: 'Indonesian', en: 'English' };
-
-function showSuggestions(kw, suggestions) {
+function showOfficialNames(kw, variants_list, source) {
   document.getElementById('suggestKeyword').textContent = kw;
-  document.getElementById('suggestChips').innerHTML = suggestions.map(s => {
-    const safeV = s.variant.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const alreadyAdded = variants.includes(s.variant);
-    return `<span class="suggest-chip${alreadyAdded ? ' added' : ''}" onclick="addVariantChip('${safeV}', this)">
-      ${alreadyAdded ? '✓' : '+'} ${esc(s.variant)}
-      <span style="opacity:0.6;font-size:10px">${LANG_DISPLAY[s.lang] || s.lang}</span>
+  document.getElementById('suggestSource').textContent = source === 'claude' ? '✦ via Claude AI' : 'from local table';
+  document.getElementById('suggestChips').innerHTML = variants_list.map(s => {
+    if (!s.name || s.name.toLowerCase() === kw.toLowerCase()) return '';
+    const safeName = s.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const alreadyAdded = variants.includes(s.name);
+    return `<span class="suggest-chip${alreadyAdded ? ' added' : ''}" onclick="addVariantChip('${safeName}', this)">
+      ${s.flag || ''} ${alreadyAdded ? '✓' : '+'} ${esc(s.name)}
+      <span style="opacity:0.6;font-size:10px">${esc(s.language || s.code || '')}</span>
     </span>`;
-  }).join('');
+  }).filter(Boolean).join('');
   document.getElementById('suggestStrip').style.display = 'block';
 }
 
@@ -1419,7 +1467,8 @@ async function startSearch() {
     count:  parseInt(document.getElementById('fCount').value) || 30,
     min_views: parseInt(document.getElementById('fMinViews').value) || 0,
     days_back: parseInt(document.getElementById('fDays').value) || 30,
-    detect_language: false,
+    detect_language: document.getElementById('detectLangCheck').checked,
+    exact_mode: searchMode === 'exact',
     language: 'any',
     search_variants: [...variants],
   };

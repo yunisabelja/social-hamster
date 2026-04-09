@@ -13,7 +13,7 @@ Run:
     uvicorn backend_main_v2:app --reload --port 8000
 """
 
-import os, asyncio, re, uuid, tempfile, sys
+import os, asyncio, re, uuid, tempfile, sys, json
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from datetime import datetime, timedelta
@@ -26,10 +26,11 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
-TIKTOK_MS_TOKEN = os.getenv("TIKTOK_MS_TOKEN", "")
-TIKTOK_PROXY    = os.getenv("TIKTOK_PROXY", "")
-_whisper_model  = None
+YOUTUBE_API_KEY   = os.getenv("YOUTUBE_API_KEY", "")
+TIKTOK_MS_TOKEN   = os.getenv("TIKTOK_MS_TOKEN", "")
+TIKTOK_PROXY      = os.getenv("TIKTOK_PROXY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+_whisper_model    = None
 jobs: dict[str, dict] = {}
 
 def get_whisper():
@@ -110,9 +111,10 @@ def detect_collaboration(video: dict) -> dict:
 class SearchRequest(BaseModel):
     keywords:        list[str]
     platforms:       list[str]
-    region:          str       = "ID"
+    region:          str       = "US"
     language:        str       = "any"
     detect_language: bool      = False
+    exact_mode:      bool      = False
     count:           int       = 30
     min_views:       int       = 0
     min_followers:   int       = 0
@@ -123,58 +125,75 @@ class AccountRequest(BaseModel):
     handle: str
     platforms: list[str]
 
-class VariantRequest(BaseModel):
+class LookupRequest(BaseModel):
     keyword: str
 
-# Lookup table: normalised keyword → list of {lang, variant}
-VARIANT_TABLE: dict[str, list[dict]] = {
+FLAG_MAP = {
+    "ja":"🇯🇵","ko":"🇰🇷","zh":"🇨🇳","id":"🇮🇩","th":"🇹🇭",
+    "vi":"🇻🇳","ar":"🇸🇦","hi":"🇮🇳","en":"🌐","ms":"🇲🇾",
+}
+
+def _v(code, language, name):
+    return {"code": code, "language": language, "name": name, "flag": FLAG_MAP.get(code, "🌐")}
+
+FALLBACK_VARIANTS: dict[str, list[dict]] = {
     "haikyu": [
-        {"lang":"ja","variant":"ハイキュー!!"},
-        {"lang":"ko","variant":"하이큐"},
-        {"lang":"zh","variant":"排球少年"},
-        {"lang":"id","variant":"Haikyuu"},
+        _v("ja","Japanese","ハイキュー!!"), _v("ko","Korean","하이큐!!"),
+        _v("zh","Chinese","排球少年"),       _v("id","Indonesian","Haikyuu"),
+        _v("en","English","Haikyuu!!"),
     ],
     "haikyuu": [
-        {"lang":"ja","variant":"ハイキュー!!"},
-        {"lang":"ko","variant":"하이큐"},
-        {"lang":"zh","variant":"排球少年"},
+        _v("ja","Japanese","ハイキュー!!"), _v("ko","Korean","하이큐!!"),
+        _v("zh","Chinese","排球少年"),       _v("en","English","Haikyu!!"),
     ],
     "naruto": [
-        {"lang":"ja","variant":"ナルト"},
-        {"lang":"ko","variant":"나루토"},
-        {"lang":"zh","variant":"火影忍者"},
+        _v("ja","Japanese","ナルト"),   _v("ko","Korean","나루토"),
+        _v("zh","Chinese","火影忍者"),  _v("ar","Arabic","ناروتو"),
+        _v("hi","Hindi","नारुतो"),
     ],
     "one piece": [
-        {"lang":"ja","variant":"ワンピース"},
-        {"lang":"ko","variant":"원피스"},
-        {"lang":"zh","variant":"海賊王"},
+        _v("ja","Japanese","ワンピース"), _v("ko","Korean","원피스"),
+        _v("zh","Chinese","海賊王"),      _v("th","Thai","วันพีซ"),
     ],
     "attack on titan": [
-        {"lang":"ja","variant":"進撃の巨人"},
-        {"lang":"ko","variant":"진격의 거인"},
-        {"lang":"zh","variant":"进击的巨人"},
-        {"lang":"id","variant":"Shingeki no Kyojin"},
+        _v("ja","Japanese","進撃の巨人"),  _v("ko","Korean","진격의 거인"),
+        _v("zh","Chinese","进击的巨人"),   _v("id","Indonesian","Shingeki no Kyojin"),
+        _v("ar","Arabic","هجوم العمالقة"),
     ],
     "demon slayer": [
-        {"lang":"ja","variant":"鬼滅の刃"},
-        {"lang":"ko","variant":"귀멸의 칼날"},
-        {"lang":"zh","variant":"鬼灭之刃"},
-        {"lang":"id","variant":"Kimetsu no Yaiba"},
+        _v("ja","Japanese","鬼滅の刃"),  _v("ko","Korean","귀멸의 칼날"),
+        _v("zh","Chinese","鬼灭之刃"),   _v("id","Indonesian","Kimetsu no Yaiba"),
+        _v("th","Thai","ดาบพิฆาตอสูร"),
     ],
     "genshin impact": [
-        {"lang":"ja","variant":"原神"},
-        {"lang":"ko","variant":"원신"},
-        {"lang":"zh","variant":"原神"},
+        _v("ja","Japanese","原神"), _v("ko","Korean","원신"),
+        _v("zh","Chinese","原神"),  _v("th","Thai","เกนชินอิมแพกต์"),
     ],
     "blue lock": [
-        {"lang":"ja","variant":"ブルーロック"},
-        {"lang":"ko","variant":"블루 록"},
-        {"lang":"zh","variant":"蓝色监狱"},
+        _v("ja","Japanese","ブルーロック"), _v("ko","Korean","블루 록"),
+        _v("zh","Chinese","蓝色监狱"),
     ],
     "jujutsu kaisen": [
-        {"lang":"ja","variant":"呪術廻戦"},
-        {"lang":"ko","variant":"주술회전"},
-        {"lang":"zh","variant":"咒术回战"},
+        _v("ja","Japanese","呪術廻戦"),  _v("ko","Korean","주술회전"),
+        _v("zh","Chinese","咒术回战"),   _v("th","Thai","มหาเวทย์ผนึกมาร"),
+    ],
+    "valorant": [
+        _v("ja","Japanese","ヴァロラント"), _v("ko","Korean","발로란트"),
+        _v("zh","Chinese","无畏契约"),      _v("th","Thai","วาโลแรนต์"),
+    ],
+    "league of legends": [
+        _v("ja","Japanese","リーグ・オブ・レジェンド"), _v("ko","Korean","리그 오브 레전드"),
+        _v("zh","Chinese","英雄联盟"),                  _v("th","Thai","ลีกออฟเลเจนส์"),
+    ],
+    "mobile legends": [
+        _v("id","Indonesian","Mobile Legends: Bang Bang"),
+        _v("th","Thai","โมบายเลเจนส์"),
+        _v("vi","Vietnamese","Mobile Legends: Bang Bang"),
+        _v("ms","Malay","Mobile Legends: Bang Bang"),
+    ],
+    "free fire": [
+        _v("id","Indonesian","Garena Free Fire"), _v("th","Thai","การีนา ฟรีไฟร์"),
+        _v("vi","Vietnamese","Garena Free Fire"),  _v("ar","Arabic","فري فاير"),
     ],
 }
 
@@ -190,10 +209,12 @@ def er(l,c,s,v): return round((l+c+s)/v*100,2) if v else 0.0
 async def detect_yt_lang(vid_id, snip):
     from langdetect import detect
 
-    # 1. defaultAudioLanguage from snippet — already fetched, most reliable
+    # 1. defaultAudioLanguage — most reliable, already in snippet
     dal = snip.get("defaultAudioLanguage") or snip.get("defaultLanguage")
     if dal:
-        return dal.split("-")[0]  # normalise "pt-BR" → "pt", "zh-Hant" → "zh"
+        lang = dal.split("-")[0]
+        print(f"  [Lang] {vid_id}: defaultAudioLanguage={dal} -> {lang}")
+        return lang
 
     # 2. Transcript via youtube-transcript-api v1.x
     try:
@@ -201,20 +222,28 @@ async def detect_yt_lang(vid_id, snip):
         api   = YouTubeTranscriptApi()
         tl    = await asyncio.to_thread(api.list, vid_id)
         codes = [t.language_code for t in tl]
+        print(f"  [Lang] {vid_id}: transcript codes={codes[:5]}")
         if codes:
             tr   = await asyncio.to_thread(api.fetch, vid_id, codes[:8])
             text = " ".join(s.text for s in list(tr)[:30])
             if len(text.strip()) >= 30:
-                return detect(text)
-    except: pass
+                lang = detect(text)
+                print(f"  [Lang] {vid_id}: transcript detect -> {lang}")
+                return lang
+    except Exception as e:
+        print(f"  [Lang] {vid_id}: transcript error: {type(e).__name__}: {e}")
 
     # 3. Description — needs ≥80 chars for reliable detection
     try:
         desc = snip.get("description","").strip()
         if len(desc) >= 80:
-            return detect(desc)
-    except: pass
+            lang = detect(desc)
+            print(f"  [Lang] {vid_id}: description detect -> {lang}")
+            return lang
+    except Exception as e:
+        print(f"  [Lang] {vid_id}: description error: {e}")
 
+    print(f"  [Lang] {vid_id}: -> unknown")
     return "unknown"
 
 async def detect_tt_lang(url):
@@ -238,15 +267,17 @@ async def detect_tt_lang(url):
     except Exception as e:
         print(f"  [WARN] tt lang detect: {e}"); return "unknown"
 
-async def search_youtube(keyword, count=30, days_back=30, region="ID", language="id", detect_lang=True):
+async def search_youtube(keyword, count=30, days_back=30, region="US", language="any", detect_lang=True, exact_mode=False):
     if not YOUTUBE_API_KEY:
         raise ValueError("YouTube API key not configured")
+    q   = f'"{keyword}"' if exact_mode else keyword
     pub = (datetime.utcnow()-timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     async with httpx.AsyncClient() as c:
         yt_params = {
-            "key":YOUTUBE_API_KEY,"q":keyword,"part":"snippet","type":"video",
-            "maxResults":min(count,50),"publishedAfter":pub,"order":"viewCount",
-            "regionCode":region}
+            "key":YOUTUBE_API_KEY,"q":q,"part":"snippet","type":"video",
+            "maxResults":min(count,50),"publishedAfter":pub,"order":"viewCount"}
+        if region and region != "GLOBAL":
+            yt_params["regionCode"] = region
         if language and language != "any":
             yt_params["relevanceLanguage"] = language
         sr = await c.get("https://www.googleapis.com/youtube/v3/search", params=yt_params, timeout=15)
@@ -285,33 +316,34 @@ async def search_youtube(keyword, count=30, days_back=30, region="ID", language=
         results.append(row)
     return results
 
-async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
+async def search_tiktok(keyword, count=30, region="US", detect_lang=True, exact_mode=False):
     """Search TikTok via TikTokApi + Playwright. Run backend locally and expose via ngrok."""
     try:
         from TikTokApi import TikTokApi  # noqa: F401
     except ImportError:
         raise ImportError("TikTokApi not installed")
     try:
-        return await asyncio.to_thread(_tiktok_search_sync, keyword, count, region, detect_lang)
+        return await asyncio.to_thread(_tiktok_search_sync, keyword, count, region, detect_lang, exact_mode)
     except (ImportError, ConnectionError):
         raise
     except Exception as e:
         msg = str(e) or repr(e) or type(e).__name__
         raise ConnectionError(f"TikTok unreachable: {msg}") from e
 
-def _tiktok_search_sync(keyword, count, region, detect_lang):
+def _tiktok_search_sync(keyword, count, region, detect_lang, exact_mode=False):
     """Runs TikTok search in a fresh event loop to avoid Playwright/uvicorn conflicts on Windows."""
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(_tiktok_search_inner(keyword, count, region, detect_lang))
+        return loop.run_until_complete(_tiktok_search_inner(keyword, count, region, detect_lang, exact_mode))
     finally:
         loop.close()
 
-async def _tiktok_search_inner(keyword, count, region, detect_lang):
+async def _tiktok_search_inner(keyword, count, region, detect_lang, exact_mode=False):
     from TikTokApi import TikTokApi
+    search_kw = f'"{keyword}"' if exact_mode else keyword
     results = []
     async with TikTokApi() as api:
         print(f"[TikTok] Creating session…")
@@ -329,8 +361,8 @@ async def _tiktok_search_inner(keyword, count, region, detect_lang):
         except Exception as e:
             msg = str(e) or repr(e) or type(e).__name__
             raise ConnectionError(f"TikTok session failed: {msg}") from e
-        print(f"[TikTok] Session OK — searching '{keyword}'")
-        async for video in api.search.search_type(keyword, "item", count=count):
+        print(f"[TikTok] Session OK — searching '{search_kw}'")
+        async for video in api.search.search_type(search_kw, "item", count=count):
             try:
                 d=video.as_dict; au=video.author
                 st=d.get("statsV2") or d.get("stats",{})
@@ -379,9 +411,9 @@ async def run_search_job(job_id, req):
     for main_kw, term, platform in search_terms:
         try:
             if platform=="youtube":
-                r=await search_youtube(term,req.count,req.days_back,req.region,req.language,req.detect_language)
+                r=await search_youtube(term,req.count,req.days_back,req.region,req.language,req.detect_language,req.exact_mode)
             elif platform=="tiktok":
-                r=await search_tiktok(term,req.count,req.region,req.detect_language)
+                r=await search_tiktok(term,req.count,req.region,req.detect_language,req.exact_mode)
             else: r=[]
             for x in r:
                 x["keyword"] = main_kw
@@ -467,11 +499,38 @@ async def health():
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-@app.post("/suggest-variants")
-def suggest_variants(req: VariantRequest):
-    kw = req.keyword.lower().strip()
-    suggestions = VARIANT_TABLE.get(kw, [])
-    return {"keyword": req.keyword, "suggestions": suggestions}
+@app.post("/lookup-variants")
+async def lookup_variants(req: LookupRequest):
+    kw = req.keyword.strip()
+    if ANTHROPIC_API_KEY:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            msg = await asyncio.to_thread(client.messages.create,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=600,
+                messages=[{"role":"user","content":
+                    f"For the game, anime, or media title '{kw}', return the official localized names used in each of these regions as a JSON array. "
+                    f"Each item should have: language (English name of the language), code (ISO 639-1 language code), and name (the official local name). "
+                    f"Regions: Japan, South Korea, China, Indonesia, Thailand, Vietnam, Arabic countries, India, Global English. "
+                    f"If the title is not known in a region or uses the same name, still include it. Return ONLY valid JSON array, no explanation."
+                }]
+            )
+            raw = msg.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"): raw = raw[4:]
+            variants = json.loads(raw.strip())
+            for v in variants:
+                v["flag"] = FLAG_MAP.get(v.get("code",""), "🌐")
+            print(f"[Claude] lookup '{kw}' -> {len(variants)} variants")
+            return {"keyword": kw, "variants": variants, "source": "claude"}
+        except Exception as e:
+            print(f"[Claude] lookup failed: {e}")
+    # Fallback to hardcoded table
+    kw_lower = kw.lower()
+    variants = FALLBACK_VARIANTS.get(kw_lower, [])
+    return {"keyword": kw, "variants": variants, "source": "fallback"}
 
 @app.post("/search")
 async def start_search(req: SearchRequest, background_tasks: BackgroundTasks):
