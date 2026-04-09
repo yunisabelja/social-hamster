@@ -26,10 +26,10 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
-TIKTOK_MS_TOKEN = os.getenv("TIKTOK_MS_TOKEN", "")
-TIKTOK_PROXY    = os.getenv("TIKTOK_PROXY", "")
-_whisper_model  = None
+YOUTUBE_API_KEY      = os.getenv("YOUTUBE_API_KEY", "")
+RAPIDAPI_KEY         = os.getenv("RAPIDAPI_KEY", "")
+RAPIDAPI_TIKTOK_HOST = os.getenv("RAPIDAPI_TIKTOK_HOST", "tiktok-scraper7.p.rapidapi.com")
+_whisper_model       = None
 jobs: dict[str, dict] = {}
 
 def get_whisper():
@@ -286,82 +286,64 @@ async def search_youtube(keyword, count=30, days_back=30, region="ID", language=
     return results
 
 async def search_tiktok(keyword, count=30, region="ID", detect_lang=True):
-    """Run TikTok search in a dedicated thread+event-loop to avoid Playwright/uvicorn conflicts on Windows."""
-    try:
-        from TikTokApi import TikTokApi  # noqa: F401 — verify installed before spinning up thread
-    except ImportError:
-        raise ImportError("TikTokApi not installed")
-    try:
-        return await asyncio.to_thread(_tiktok_search_sync, keyword, count, region, detect_lang)
-    except (ImportError, ConnectionError):
-        raise
-    except Exception as e:
-        msg = str(e) or repr(e) or type(e).__name__
-        raise ConnectionError(f"TikTok unreachable: {msg}") from e
-
-def _tiktok_search_sync(keyword, count, region, detect_lang):
-    """Blocking wrapper: runs its own event loop so Playwright never touches uvicorn's loop."""
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(_tiktok_search_inner(keyword, count, region, detect_lang))
-    finally:
-        loop.close()
-
-async def _tiktok_search_inner(keyword, count, region, detect_lang):
-    from TikTokApi import TikTokApi
+    """Search TikTok via RapidAPI (tiktok-scraper7 or compatible host). No Playwright, works on any server."""
+    if not RAPIDAPI_KEY:
+        raise ValueError("TikTok API key not configured — set RAPIDAPI_KEY in .env (free key at rapidapi.com)")
     results = []
-    async with TikTokApi() as api:
-        print(f"[TikTok] Creating session (internal timeout=90s)…")
-        try:
-            await asyncio.wait_for(
-                api.create_sessions(
-                    ms_tokens=[TIKTOK_MS_TOKEN] if TIKTOK_MS_TOKEN else None,
-                    num_sessions=1, sleep_after=3,
-                    timeout=90000,
-                    proxies=[{"server": TIKTOK_PROXY}] if TIKTOK_PROXY else None,
-                ),
-                timeout=120
-            )
-        except asyncio.TimeoutError as e:
-            raise ConnectionError("TikTok session failed: timed out after 120s") from e
-        except Exception as e:
-            msg = str(e) or repr(e) or type(e).__name__
-            raise ConnectionError(f"TikTok session failed: {msg}") from e
-        print(f"[TikTok] Session OK — searching '{keyword}'")
-        async for video in api.search.search_type(keyword, "item", count=count):
+    cursor  = 0
+    headers = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": RAPIDAPI_TIKTOK_HOST}
+    async with httpx.AsyncClient(timeout=20, headers=headers) as client:
+        while len(results) < count:
             try:
-                d=video.as_dict; au=video.author
-                st=d.get("statsV2") or d.get("stats",{})
-                ast=d.get("authorStats",{}); mu=d.get("music",{})
-                au_d=d.get("author",{})
-                v=int(st.get("playCount",0) or 0); l=int(st.get("diggCount",0) or 0)
-                co=int(st.get("commentCount",0) or 0); sh=int(st.get("shareCount",0) or 0)
-                f=int(ast.get("followerCount",0) or 0)
-                desc=d.get("desc","")
-                url=f"https://www.tiktok.com/@{au.username}/video/{video.id}"
-                lang = await detect_tt_lang(url) if detect_lang else "unknown"
+                r = await client.get(
+                    f"https://{RAPIDAPI_TIKTOK_HOST}/search/video",
+                    params={"keywords": keyword, "count": min(count - len(results), 30),
+                            "cursor": cursor, "region": region},
+                )
+                data = r.json()
+            except Exception as e:
+                raise ConnectionError(f"TikTok (RapidAPI) unreachable: {str(e)}") from e
+            if data.get("code") != 0:
+                raise ConnectionError(f"TikTok search error: {data.get('msg','unknown')}")
+            videos = data.get("data", {}).get("videos", [])
+            if not videos:
+                break
+            for v in videos:
+                if len(results) >= count:
+                    break
+                au       = v.get("author", {})
+                vid_id   = str(v.get("video_id") or v.get("id", ""))
+                username = au.get("unique_id", "")
+                desc     = v.get("title", "")
+                views    = int(v.get("play_count",    0) or 0)
+                likes    = int(v.get("digg_count",    0) or 0)
+                comments = int(v.get("comment_count", 0) or 0)
+                shares   = int(v.get("share_count",   0) or 0)
+                followers= int(au.get("fans", 0) or 0)
+                cover    = v.get("cover") or v.get("origin_cover") or ""
+                video_url = f"https://www.tiktok.com/@{username}/video/{vid_id}"
+                lang = await detect_tt_lang(video_url) if detect_lang else "unknown"
+                music = v.get("music_info", {})
                 row = {
-                    "platform":"tiktok","id":str(video.id),"url":url,
-                    "thumbnail":d.get("video",{}).get("cover",""),
+                    "platform":"tiktok","id":vid_id,"url":video_url,"thumbnail":cover,
                     "title":desc[:100],"caption":desc,"hashtags":ht(desc),
-                    "upload_date":datetime.fromtimestamp(int(d.get("createTime",0))).strftime("%Y-%m-%d"),
-                    "views":v,"likes":l,"comments":co,"shares":sh,
-                    "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
+                    "upload_date":datetime.fromtimestamp(int(v.get("create_time",0))).strftime("%Y-%m-%d"),
+                    "views":views,"likes":likes,"comments":comments,"shares":shares,
+                    "views_fmt":fmt(views),"likes_fmt":fmt(likes),"comments_fmt":fmt(comments),
                     "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
-                    "account":{"id":str(au.user_id),"username":f"@{au.username}",
-                        "display_name":au_d.get("nickname",au.username),"followers":f,"followers_fmt":fmt(f),
-                        "profile_url":f"https://www.tiktok.com/@{au.username}",
-                        "verified":au_d.get("verified",False)},
-                    "audio":{"title":mu.get("title",""),"artist":mu.get("authorName",""),"original":mu.get("original",False)},
-                    "engagement_rate":er(l,co,sh,v),"keyword":keyword,"region":region,
+                    "account":{"id":str(au.get("id","")),"username":f"@{username}",
+                        "display_name":au.get("nickname",username),
+                        "followers":followers,"followers_fmt":fmt(followers),
+                        "profile_url":f"https://www.tiktok.com/@{username}",
+                        "verified":bool(au.get("verified",False))},
+                    "audio":{"title":music.get("title",""),"artist":music.get("author",""),"original":False},
+                    "engagement_rate":er(likes,comments,shares,views),"keyword":keyword,"region":region,
                 }
                 row["collaboration"] = detect_collaboration(row)
                 results.append(row)
-            except Exception as ve:
-                print(f"  [TikTok] skipping video: {ve}"); continue
+            if not data.get("data", {}).get("hasMore", False):
+                break
+            cursor = data.get("data", {}).get("cursor", cursor + 30)
     return results
 
 async def run_search_job(job_id, req):
@@ -445,22 +427,25 @@ async def health():
         except Exception as e:
             youtube_status = f"error: {str(e)}"
 
-    # TikTok: check if port 7890 proxy is reachable
-    proxy_host = "127.0.0.1"
-    proxy_port = 7890
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(proxy_host, proxy_port), timeout=3
-        )
-        writer.close()
-        await writer.wait_closed()
-        tiktok_status = "live"
-    except asyncio.TimeoutError:
-        tiktok_status = "no_proxy"
-    except ConnectionRefusedError:
-        tiktok_status = "no_proxy"
-    except Exception as e:
-        tiktok_status = f"error: {str(e)}"
+    # TikTok: probe RapidAPI with a minimal search call
+    if not RAPIDAPI_KEY:
+        tiktok_status = "no_key"
+    else:
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.get(
+                    f"https://{RAPIDAPI_TIKTOK_HOST}/search/video",
+                    params={"keywords":"test","count":1,"cursor":0},
+                    headers={"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": RAPIDAPI_TIKTOK_HOST},
+                    timeout=8,
+                )
+                body = r.json()
+            if r.status_code == 200 and body.get("code") == 0:
+                tiktok_status = "live"
+            else:
+                tiktok_status = f"error: {body.get('msg', f'HTTP {r.status_code}')}"
+        except Exception as e:
+            tiktok_status = f"error: {str(e)}"
 
     return {
         "status": "ok",
