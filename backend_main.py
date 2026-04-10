@@ -115,6 +115,7 @@ class SearchRequest(BaseModel):
     language:        str       = "any"
     detect_language: bool      = False
     exact_mode:      bool      = False
+    strict_language: bool      = False
     count:           int       = 30
     min_views:       int       = 0
     min_followers:   int       = 0
@@ -419,8 +420,11 @@ async def run_search_job(job_id, req):
                 x["keyword"] = main_kw
                 x["search_variant"] = term
             r=[x for x in r if x["views"]>=req.min_views and x["account"]["followers"]>=req.min_followers]
-            if req.language and req.language!="any":
-                r=[x for x in r if x.get("spoken_language") in (req.language,"unknown")]
+            if req.language and req.language != "any":
+                if req.strict_language:
+                    r = [x for x in r if x.get("spoken_language") == req.language]
+                else:
+                    r = [x for x in r if x.get("spoken_language") in (req.language, "unknown")]
             all_results.extend(r)
         except Exception as e:
             msg = str(e)

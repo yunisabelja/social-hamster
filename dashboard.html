@@ -574,8 +574,28 @@ a.post-link:hover { border-color: var(--accent); }
 .suggest-chip:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .suggest-chip.added {
   background: rgba(0,229,160,0.1); border-color: rgba(0,229,160,0.3);
-  color: var(--green); cursor: default; pointer-events: none;
+  color: var(--green); cursor: pointer;
 }
+.suggest-chip.added:hover { background: rgba(0,229,160,0.18); }
+
+/* ── Lookup section ── */
+.lookup-main-btn {
+  font-size: 13px !important; font-weight: 600 !important;
+  padding: 8px 18px !important; color: var(--accent) !important;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent) !important;
+}
+.lookup-subtitle {
+  font-size: 10px; color: var(--text2); opacity: 0.6;
+  margin-top: 4px; padding-left: 2px;
+}
+
+/* ── Info tooltip icon ── */
+.info-tip {
+  cursor: help; font-style: normal; opacity: 0.55;
+  font-size: 11px; vertical-align: middle;
+  position: relative;
+}
+.info-tip:hover { opacity: 1; }
 
 /* ── Save Search button ── */
 .search-btn-row { display: flex; gap: 10px; align-items: stretch; }
@@ -774,30 +794,29 @@ a.post-link:hover { border-color: var(--accent); }
         </div>
         <div class="tags-row" id="tagsRow"></div>
 
-        <!-- Official names strip (auto-shown after keyword lookup) -->
+        <!-- Variants: AI lookup button -->
+        <div style="margin-bottom:12px">
+          <button class="icon-btn lookup-main-btn" id="lookupBtn" onclick="fetchOfficialNames()">
+            🔍 Find names in other languages
+          </button>
+          <div class="lookup-subtitle">(powered by AI)</div>
+        </div>
+
+        <!-- Official names strip (auto-shown after lookup — chips ticked by default) -->
         <div class="suggest-strip" id="suggestStrip">
           <div class="suggest-label" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <span>Official names for "<strong id="suggestKeyword"></strong>" — tick to include in search:</span>
+            <span>Names for "<strong id="suggestKeyword"></strong>"</span>
             <span id="suggestSource" style="font-size:10px;color:var(--text2);opacity:0.7"></span>
           </div>
           <div class="suggest-chips" id="suggestChips"></div>
         </div>
 
-        <!-- Variants toggle + collapsible section -->
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <button class="variants-toggle" id="variantsToggle" onclick="toggleVariants()">
-            <span id="variantsArrow">▶</span> Search variants
-            <span class="variant-badge" id="variantBadge"></span>
-          </button>
-          <button class="icon-btn" id="lookupBtn" onclick="fetchOfficialNames()" style="font-size:12px;padding:6px 12px">
-            🔍 Find official names
-          </button>
-        </div>
+        <!-- Manual entry toggle -->
+        <button class="variants-toggle" id="variantsToggle" onclick="toggleVariants()">
+          <span id="variantsArrow">▶</span> ✏️ Enter manually instead
+          <span class="variant-badge" id="variantBadge"></span>
+        </button>
         <div class="variants-section" id="variantsSection">
-          <div class="variants-helper">
-            Add the same keyword in other languages to find more results across all platforms.<br>
-            E.g. for <strong style="color:var(--text)">Haikyu</strong> add: <span style="color:#c084fc">ハイキュー!!</span> (Japanese), <span style="color:#c084fc">하이큐</span> (Korean), <span style="color:#c084fc">排球少年</span> (Chinese)
-          </div>
           <div class="tags-row" id="variantTagsRow"></div>
           <input type="text" id="variantInput" placeholder="Type a translation or variant → press Enter"/>
         </div>
@@ -811,59 +830,35 @@ a.post-link:hover { border-color: var(--accent); }
         <span class="form-label">Filters</span>
         <div class="filters-grid">
           <div>
-            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Region</label>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Content Language</label>
             <div class="select-wrap">
-              <select id="fRegion">
-                <option value="GLOBAL">🌍 Global (all regions)</option>
-                <optgroup label="North America">
-                  <option value="US" selected>🇺🇸 United States (US)</option>
-                  <option value="CA">🇨🇦 Canada (CA)</option>
-                </optgroup>
-                <optgroup label="Latin America">
-                  <option value="BR">🇧🇷 Brazil (BR)</option>
-                  <option value="AR">🇦🇷 Argentina (AR)</option>
-                  <option value="CO">🇨🇴 Colombia (CO)</option>
-                  <option value="CL">🇨🇱 Chile (CL)</option>
-                  <option value="PE">🇵🇪 Peru (PE)</option>
-                  <option value="VE">🇻🇪 Venezuela (VE)</option>
-                  <option value="MX">🇲🇽 Mexico (MX)</option>
-                </optgroup>
-                <optgroup label="Europe">
-                  <option value="GB">🇬🇧 United Kingdom (GB)</option>
-                  <option value="DE">🇩🇪 Germany (DE)</option>
-                  <option value="FR">🇫🇷 France (FR)</option>
-                  <option value="IT">🇮🇹 Italy (IT)</option>
-                  <option value="ES">🇪🇸 Spain (ES)</option>
-                  <option value="NL">🇳🇱 Netherlands (NL)</option>
-                  <option value="SE">🇸🇪 Sweden (SE)</option>
-                  <option value="PL">🇵🇱 Poland (PL)</option>
-                  <option value="TR">🇹🇷 Turkey (TR)</option>
-                </optgroup>
-                <optgroup label="East Asia">
-                  <option value="JP">🇯🇵 Japan (JP)</option>
-                  <option value="KR">🇰🇷 South Korea (KR)</option>
-                  <option value="CN">🇨🇳 China (CN)</option>
-                  <option value="TW">🇹🇼 Taiwan (TW)</option>
-                  <option value="HK">🇭🇰 Hong Kong (HK)</option>
-                </optgroup>
-                <optgroup label="Southeast Asia">
-                  <option value="ID">🇮🇩 Indonesia (ID)</option>
-                  <option value="PH">🇵🇭 Philippines (PH)</option>
-                  <option value="TH">🇹🇭 Thailand (TH)</option>
-                  <option value="VN">🇻🇳 Vietnam (VN)</option>
-                  <option value="MY">🇲🇾 Malaysia (MY)</option>
-                  <option value="SG">🇸🇬 Singapore (SG)</option>
-                </optgroup>
-                <optgroup label="Oceania">
-                  <option value="AU">🇦🇺 Australia (AU)</option>
-                  <option value="NZ">🇳🇿 New Zealand (NZ)</option>
-                </optgroup>
+              <select id="fLanguage" onchange="onLanguageChange()">
+                <option value="any">🌐 Any language</option>
+                <option value="en">🇬🇧 English (en)</option>
+                <option value="id">🇮🇩 Indonesian (id)</option>
+                <option value="ja">🇯🇵 Japanese (ja)</option>
+                <option value="ko">🇰🇷 Korean (ko)</option>
+                <option value="zh">🇨🇳 Chinese (zh)</option>
+                <option value="th">🇹🇭 Thai (th)</option>
+                <option value="vi">🇻🇳 Vietnamese (vi)</option>
+                <option value="ms">🇲🇾 Malay (ms)</option>
+                <option value="ar">🇸🇦 Arabic (ar)</option>
+                <option value="hi">🇮🇳 Hindi (hi)</option>
+                <option value="tl">🇵🇭 Filipino (tl)</option>
+                <option value="pt">🇧🇷 Portuguese (pt)</option>
+                <option value="es">🇪🇸 Spanish (es)</option>
+                <option value="fr">🇫🇷 French (fr)</option>
               </select>
+            </div>
+            <div id="strictLangRow" style="display:none;margin-top:8px">
+              <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-size:12px;color:var(--text2)">
+                <input type="checkbox" id="strictLangCheck" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0"/>
+                <span>Only show results in selected language <span class="info-tip" title="When enabled, videos where the language could not be detected are excluded. By default, undetected videos are shown alongside matched ones.">ℹ️</span></span>
+              </label>
             </div>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text2);margin-bottom:4px;display:block">Max results</label>
-            <div style="font-size:10px;color:var(--text2);opacity:0.7;margin-bottom:5px">Max videos per keyword per platform</div>
+            <label style="font-size:11px;color:var(--text2);margin-bottom:6px;display:block">Max results <span class="info-tip" title="Max videos per keyword per platform">ℹ️</span></label>
             <input type="number" id="fCount" value="30" min="5" max="100" step="5"/>
           </div>
           <div>
@@ -1378,6 +1373,13 @@ function toggleVariants() {
   document.getElementById('variantsArrow').textContent = open ? '▼' : '▶';
 }
 
+// ── Language filter ───────────────────────────────────────────────────────
+function onLanguageChange() {
+  const lang = document.getElementById('fLanguage').value;
+  document.getElementById('strictLangRow').style.display = lang === 'any' ? 'none' : 'block';
+  if (lang === 'any') document.getElementById('strictLangCheck').checked = false;
+}
+
 // ── Search mode ───────────────────────────────────────────────────────────
 let searchMode = 'fuzzy';
 function setSearchMode(mode) {
@@ -1402,35 +1404,46 @@ async function fetchOfficialNames() {
     if (d.variants && d.variants.length) showOfficialNames(kw, d.variants, d.source);
     else toast('No official names found for this title');
   } catch(e) { toast('Lookup failed — is the backend running?'); }
-  btn.textContent = '🔍 Find official names'; btn.disabled = false;
+  btn.textContent = '🔍 Find names in other languages'; btn.disabled = false;
 }
 
 function showOfficialNames(kw, variants_list, source) {
   document.getElementById('suggestKeyword').textContent = kw;
   document.getElementById('suggestSource').textContent = source === 'claude' ? '✦ via Claude AI' : 'from local table';
+  // Auto-add all new variants (ticked by default)
+  variants_list.forEach(s => {
+    if (s.name && s.name.toLowerCase() !== kw.toLowerCase() && !variants.includes(s.name)) {
+      variants.push(s.name);
+    }
+  });
+  renderVariantTags();
   document.getElementById('suggestChips').innerHTML = variants_list.map(s => {
     if (!s.name || s.name.toLowerCase() === kw.toLowerCase()) return '';
     const safeName = s.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const alreadyAdded = variants.includes(s.name);
-    return `<span class="suggest-chip${alreadyAdded ? ' added' : ''}" onclick="addVariantChip('${safeName}', this)">
-      ${s.flag || ''} ${alreadyAdded ? '✓' : '+'} ${esc(s.name)}
+    const isIn = variants.includes(s.name);
+    return `<span class="suggest-chip${isIn ? ' added' : ''}" onclick="toggleVariantChip('${safeName}', this)">
+      ${s.flag || ''} ${isIn ? '✓' : '+'} ${esc(s.name)}
       <span style="opacity:0.6;font-size:10px">${esc(s.language || s.code || '')}</span>
     </span>`;
   }).filter(Boolean).join('');
   document.getElementById('suggestStrip').style.display = 'block';
 }
 
-function addVariantChip(v, el) {
-  if (!variants.includes(v)) {
+function toggleVariantChip(v, el) {
+  if (variants.includes(v)) {
+    variants = variants.filter(x => x !== v);
+    el.className = 'suggest-chip';
+    const span = el.querySelector('span');
+    el.innerHTML = `+ ${esc(v)} ${span ? span.outerHTML : ''}`;
+    el.onclick = () => toggleVariantChip(v, el);
+  } else {
     variants.push(v);
-    renderVariantTags();
-    // Auto-open the variants section
-    const sec = document.getElementById('variantsSection');
-    if (!sec.classList.contains('show')) toggleVariants();
+    el.className = 'suggest-chip added';
+    const span = el.querySelector('span');
+    el.innerHTML = `✓ ${esc(v)} ${span ? span.outerHTML : ''}`;
+    el.onclick = () => toggleVariantChip(v, el);
   }
-  el.className = 'suggest-chip added';
-  el.innerHTML = `✓ ${esc(v)} <span style="opacity:0.6;font-size:10px">${el.querySelector('span')?.textContent || ''}</span>`;
-  el.onclick = null;
+  renderVariantTags();
 }
 
 // ── Platforms ─────────────────────────────────────────────────────────────
@@ -1463,13 +1476,14 @@ async function startSearch() {
   const body = {
     keywords,
     platforms,
-    region: document.getElementById('fRegion').value,
+    region: 'US',
+    language: document.getElementById('fLanguage').value,
+    strict_language: document.getElementById('strictLangCheck').checked,
     count:  parseInt(document.getElementById('fCount').value) || 30,
     min_views: parseInt(document.getElementById('fMinViews').value) || 0,
     days_back: parseInt(document.getElementById('fDays').value) || 30,
     detect_language: document.getElementById('detectLangCheck').checked,
     exact_mode: searchMode === 'exact',
-    language: 'any',
     search_variants: [...variants],
   };
 
