@@ -1401,15 +1401,24 @@ async function fetchOfficialNames() {
       body: JSON.stringify({ keyword: kw }),
     });
     const d = await r.json();
-    if (d.variants && d.variants.length) showOfficialNames(kw, d.variants, d.source);
-    else toast('No official names found for this title');
+    if (d.variants && d.variants.length) {
+      showOfficialNames(kw, d.variants, d.source, d.claude_error);
+    } else {
+      if (d.claude_error) toast(`AI unavailable: ${d.claude_error.slice(0,80)}`);
+      else toast('No official names found for this title');
+    }
   } catch(e) { toast('Lookup failed — is the backend running?'); }
   btn.textContent = '🔍 Find names in other languages'; btn.disabled = false;
 }
 
-function showOfficialNames(kw, variants_list, source) {
+function showOfficialNames(kw, variants_list, source, claude_error) {
   document.getElementById('suggestKeyword').textContent = kw;
-  document.getElementById('suggestSource').textContent = source === 'claude' ? '✦ via Claude AI' : 'from local table';
+  let sourceLabel = source === 'claude' ? '✦ via Claude AI' : 'from local table';
+  if (claude_error) {
+    const short = claude_error.includes('credit') ? 'no API credits' : claude_error.slice(0,40);
+    sourceLabel += ` · AI unavailable (${short})`;
+  }
+  document.getElementById('suggestSource').textContent = sourceLabel;
   // Auto-add all new variants (ticked by default)
   variants_list.forEach(s => {
     if (s.name && s.name.toLowerCase() !== kw.toLowerCase() && !variants.includes(s.name)) {

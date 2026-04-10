@@ -506,6 +506,7 @@ async def health():
 @app.post("/lookup-variants")
 async def lookup_variants(req: LookupRequest):
     kw = req.keyword.strip()
+    claude_error = None
     if ANTHROPIC_API_KEY:
         try:
             import anthropic
@@ -521,6 +522,7 @@ async def lookup_variants(req: LookupRequest):
                 }]
             )
             raw = msg.content[0].text.strip()
+            print(f"[Claude] raw response for '{kw}': {raw[:200]}")
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"): raw = raw[4:]
@@ -530,11 +532,12 @@ async def lookup_variants(req: LookupRequest):
             print(f"[Claude] lookup '{kw}' -> {len(variants)} variants")
             return {"keyword": kw, "variants": variants, "source": "claude"}
         except Exception as e:
+            claude_error = str(e)
             print(f"[Claude] lookup failed: {e}")
     # Fallback to hardcoded table
     kw_lower = kw.lower()
     variants = FALLBACK_VARIANTS.get(kw_lower, [])
-    return {"keyword": kw, "variants": variants, "source": "fallback"}
+    return {"keyword": kw, "variants": variants, "source": "fallback", "claude_error": claude_error}
 
 @app.post("/search")
 async def start_search(req: SearchRequest, background_tasks: BackgroundTasks):
