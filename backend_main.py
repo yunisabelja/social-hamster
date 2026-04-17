@@ -208,16 +208,24 @@ def ht(t): return re.findall(r"#(\w+)", t)
 def er(l,c,s,v): return round((l+c+s)/v*100,2) if v else 0.0
 
 async def detect_yt_lang(vid_id, snip):
+    """Return (language_code, source) where source is 'api'|'transcript'|'title'|'unknown'."""
     from langdetect import detect, LangDetectException
 
-    # 1. defaultAudioLanguage metadata fast-path
-    dal = snip.get("defaultAudioLanguage") or snip.get("defaultLanguage")
+    # 1. defaultAudioLanguage metadata — most authoritative
+    dal = snip.get("defaultAudioLanguage")
     if dal:
         lang = dal.split("-")[0]
         print(f"  [Lang] {vid_id}: defaultAudioLanguage={dal} -> {lang}")
-        return lang
+        return lang, "api"
 
-    # 2. Transcript via youtube-transcript-api — list first, then fetch whatever is available
+    # 2. defaultLanguage metadata
+    dl = snip.get("defaultLanguage")
+    if dl:
+        lang = dl.split("-")[0]
+        print(f"  [Lang] {vid_id}: defaultLanguage={dl} -> {lang}")
+        return lang, "api"
+
+    # 3. Transcript — fetch first available regardless of language, run langdetect
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         api = YouTubeTranscriptApi()
@@ -225,38 +233,41 @@ async def detect_yt_lang(vid_id, snip):
         transcripts = list(tl)
         print(f"  [Lang] {vid_id}: transcripts available: {[t.language_code for t in transcripts[:5]]}")
         if transcripts:
-            # Prefer auto-generated (reflects actual spoken language); fall back to manual
-            auto = [t for t in transcripts if t.is_generated]
+            # Prefer auto-generated (language_code reflects spoken language); fall back to manual
+            auto   = [t for t in transcripts if t.is_generated]
             chosen = (auto or transcripts)[0]
-            print(f"  [Lang] {vid_id}: fetching transcript code={chosen.language_code} generated={chosen.is_generated}")
+            print(f"  [Lang] {vid_id}: fetching code={chosen.language_code} generated={chosen.is_generated}")
             tr   = await asyncio.to_thread(chosen.fetch)
             text = " ".join(s.text for s in list(tr)[:60])
-            print(f"  [Lang] {vid_id}: transcript text length={len(text.strip())}")
+            print(f"  [Lang] {vid_id}: transcript text len={len(text.strip())}")
             if len(text.strip()) >= 50:
                 try:
                     lang = detect(text)
                     print(f"  [Lang] {vid_id}: transcript langdetect -> {lang}")
-                    return lang
+                    return lang, "transcript"
                 except LangDetectException as e:
-                    print(f"  [Lang] {vid_id}: langdetect failed on transcript: {e}")
+                    print(f"  [Lang] {vid_id}: transcript langdetect failed: {e}")
     except Exception as e:
         print(f"  [Lang] {vid_id}: transcript error: {type(e).__name__}: {e}")
 
-    # 3. Description fallback — needs ≥80 chars for reliable detection
+    # 4. Title + description fallback — works for Shorts and caption-disabled videos
     try:
-        desc = snip.get("description", "").strip()
-        if len(desc) >= 80:
+        title = snip.get("title", "").strip()
+        desc  = snip.get("description", "").strip()
+        combined = (title + " " + desc).strip()
+        print(f"  [Lang] {vid_id}: title+desc len={len(combined)}")
+        if len(combined) >= 20:
             try:
-                lang = detect(desc)
-                print(f"  [Lang] {vid_id}: description langdetect -> {lang}")
-                return lang
+                lang = detect(combined)
+                print(f"  [Lang] {vid_id}: title+desc langdetect -> {lang}")
+                return lang, "title"
             except LangDetectException as e:
-                print(f"  [Lang] {vid_id}: langdetect failed on description: {e}")
+                print(f"  [Lang] {vid_id}: title+desc langdetect failed: {e}")
     except Exception as e:
-        print(f"  [Lang] {vid_id}: description error: {e}")
+        print(f"  [Lang] {vid_id}: title+desc error: {e}")
 
-    print(f"  [Lang] {vid_id}: -> unknown (no usable text found)")
-    return "unknown"
+    print(f"  [Lang] {vid_id}: -> unknown")
+    return "unknown", "unknown"
 
 async def detect_tt_lang(url):
     try:
@@ -310,7 +321,7 @@ async def search_youtube(keyword, count=30, days_back=30, region="US", language=
         ch=cm.get(ch_id,{}); cs=ch.get("statistics",{}); csn=ch.get("snippet",{})
         v=int(st.get("viewCount",0)); l=int(st.get("likeCount",0))
         co=int(st.get("commentCount",0)); s=int(cs.get("subscriberCount",0))
-        lang = await detect_yt_lang(vid,vs) if detect_lang else "unknown"
+        lang, lang_src = await detect_yt_lang(vid,vs) if detect_lang else ("unknown","unknown")
         row = {
             "platform":"youtube","id":vid,"url":f"https://www.youtube.com/watch?v={vid}",
             "thumbnail":snip.get("thumbnails",{}).get("medium",{}).get("url",""),
@@ -319,6 +330,7 @@ async def search_youtube(keyword, count=30, days_back=30, region="US", language=
             "views":v,"likes":l,"comments":co,"shares":0,
             "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
             "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
+            "language_source":lang_src,
             "account":{"id":ch_id,"username":csn.get("customUrl",ch_id),
                 "display_name":snip.get("channelTitle",""),"followers":s,"followers_fmt":fmt(s),
                 "profile_url":f"https://www.youtube.com/channel/{ch_id}","verified":bool(csn.get("country"))},
