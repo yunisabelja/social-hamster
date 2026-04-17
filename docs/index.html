@@ -888,7 +888,7 @@ a.post-link:hover { border-color: var(--accent); }
             </div>
           </div>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
-            <input type="checkbox" id="detectLangCheck" style="accent-color:var(--accent)"/>
+            <input type="checkbox" id="detectLangCheck" checked style="accent-color:var(--accent)"/>
             Detect language
           </label>
         </div>
@@ -2101,7 +2101,7 @@ async function runCompare() {
     platforms: plats,
     region: document.getElementById(regionId).value,
     count: parseInt(document.getElementById(countId).value) || 20,
-    min_views: 0, days_back: 30, detect_language: false, language: 'any',
+    min_views: 0, days_back: 30, detect_language: document.getElementById('detectLangCheck').checked, language: 'any',
   });
 
   const bodyA = makeBody(cmpKwA, cmpPlatA, 'cmpRegionA', 'cmpCountA');

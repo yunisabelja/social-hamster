@@ -113,7 +113,7 @@ class SearchRequest(BaseModel):
     platforms:       list[str]
     region:          str       = "US"
     language:        str       = "any"
-    detect_language: bool      = False
+    detect_language: bool      = True
     exact_mode:      bool      = False
     strict_language: bool      = False
     count:           int       = 30
@@ -208,43 +208,54 @@ def ht(t): return re.findall(r"#(\w+)", t)
 def er(l,c,s,v): return round((l+c+s)/v*100,2) if v else 0.0
 
 async def detect_yt_lang(vid_id, snip):
-    from langdetect import detect
+    from langdetect import detect, LangDetectException
 
-    # 1. defaultAudioLanguage — most reliable, already in snippet
+    # 1. defaultAudioLanguage metadata fast-path
     dal = snip.get("defaultAudioLanguage") or snip.get("defaultLanguage")
     if dal:
         lang = dal.split("-")[0]
         print(f"  [Lang] {vid_id}: defaultAudioLanguage={dal} -> {lang}")
         return lang
 
-    # 2. Transcript via youtube-transcript-api v1.x
+    # 2. Transcript via youtube-transcript-api — list first, then fetch whatever is available
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        api   = YouTubeTranscriptApi()
-        tl    = await asyncio.to_thread(api.list, vid_id)
-        codes = [t.language_code for t in tl]
-        print(f"  [Lang] {vid_id}: transcript codes={codes[:5]}")
-        if codes:
-            tr   = await asyncio.to_thread(api.fetch, vid_id, codes[:8])
-            text = " ".join(s.text for s in list(tr)[:30])
-            if len(text.strip()) >= 30:
-                lang = detect(text)
-                print(f"  [Lang] {vid_id}: transcript detect -> {lang}")
-                return lang
+        api = YouTubeTranscriptApi()
+        tl  = await asyncio.to_thread(api.list, vid_id)
+        transcripts = list(tl)
+        print(f"  [Lang] {vid_id}: transcripts available: {[t.language_code for t in transcripts[:5]]}")
+        if transcripts:
+            # Prefer auto-generated (reflects actual spoken language); fall back to manual
+            auto = [t for t in transcripts if t.is_generated]
+            chosen = (auto or transcripts)[0]
+            print(f"  [Lang] {vid_id}: fetching transcript code={chosen.language_code} generated={chosen.is_generated}")
+            tr   = await asyncio.to_thread(chosen.fetch)
+            text = " ".join(s.text for s in list(tr)[:60])
+            print(f"  [Lang] {vid_id}: transcript text length={len(text.strip())}")
+            if len(text.strip()) >= 50:
+                try:
+                    lang = detect(text)
+                    print(f"  [Lang] {vid_id}: transcript langdetect -> {lang}")
+                    return lang
+                except LangDetectException as e:
+                    print(f"  [Lang] {vid_id}: langdetect failed on transcript: {e}")
     except Exception as e:
         print(f"  [Lang] {vid_id}: transcript error: {type(e).__name__}: {e}")
 
-    # 3. Description — needs ≥80 chars for reliable detection
+    # 3. Description fallback — needs ≥80 chars for reliable detection
     try:
-        desc = snip.get("description","").strip()
+        desc = snip.get("description", "").strip()
         if len(desc) >= 80:
-            lang = detect(desc)
-            print(f"  [Lang] {vid_id}: description detect -> {lang}")
-            return lang
+            try:
+                lang = detect(desc)
+                print(f"  [Lang] {vid_id}: description langdetect -> {lang}")
+                return lang
+            except LangDetectException as e:
+                print(f"  [Lang] {vid_id}: langdetect failed on description: {e}")
     except Exception as e:
         print(f"  [Lang] {vid_id}: description error: {e}")
 
-    print(f"  [Lang] {vid_id}: -> unknown")
+    print(f"  [Lang] {vid_id}: -> unknown (no usable text found)")
     return "unknown"
 
 async def detect_tt_lang(url):
