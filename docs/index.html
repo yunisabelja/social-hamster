@@ -1860,7 +1860,7 @@ function renderTable(results) {
       <td><span class="num">${r.comments_fmt}</span></td>
       <td><span class="num">${fmt(r.shares||0)}</span></td>
       <td><span class="eng-pill ${engClass}">${eng}%</span></td>
-      <td><span class="lang-pill lang-${r.spoken_language||'unknown'}" title="${r.spoken_language_name||'Unknown'} · via ${{'api':'YouTube metadata','transcript':'transcript','title':'title/description','unknown':'unknown'}[r.language_source]||r.language_source||'?'}">${(r.spoken_language_name||'Unknown')}</span></td>
+      <td><span class="lang-pill lang-${r.spoken_language||'unknown'}" title="${r.spoken_language_name||'Unknown'} · via ${{'api':'YouTube metadata','transcript':'transcript','title':'title/caption','audio':'audio analysis','unknown':'unknown'}[r.language_source]||r.language_source||'?'}">${(r.spoken_language_name||'Unknown')}</span></td>
     </tr>`;
   }).join('');
 }

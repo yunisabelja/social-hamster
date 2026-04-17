@@ -2,7 +2,7 @@
 SocialScope — Backend API v2
 What's new:
   - YouTube: reads defaultAudioLanguage, falls back to transcript + langdetect
-  - TikTok:  downloads first 10s audio via yt-dlp, detects language with faster-whisper
+  - TikTok:  audio via yt-dlp+faster-whisper (p>0.7), fallback to caption/title langdetect
   - Language filter applied after scraping based on actual spoken language
   - YouTube API now passes regionCode + relevanceLanguage
 
@@ -269,7 +269,11 @@ async def detect_yt_lang(vid_id, snip):
     print(f"  [Lang] {vid_id}: -> unknown")
     return "unknown", "unknown"
 
-async def detect_tt_lang(url):
+async def detect_tt_lang(url, video_data=None):
+    """Return (language_code, source) where source is 'audio'|'title'|'unknown'."""
+    from langdetect import detect, LangDetectException
+
+    # Step 1: audio via yt-dlp + faster-whisper
     try:
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "clip.mp3")
@@ -279,16 +283,37 @@ async def detect_tt_lang(url):
                 "-o",out,"--quiet",url,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
             await asyncio.wait_for(proc.wait(), timeout=30)
-            if not os.path.exists(out): return "unknown"
-            m = await asyncio.to_thread(get_whisper)
-            segs, info = await asyncio.to_thread(
-                m.transcribe, out, beam_size=1, language=None, task="transcribe",
-                without_timestamps=True, condition_on_previous_text=False)
-            list(segs)
-            return info.language or "unknown"
-    except asyncio.TimeoutError: return "unknown"
+            if os.path.exists(out):
+                m = await asyncio.to_thread(get_whisper)
+                segs, info = await asyncio.to_thread(
+                    m.transcribe, out, beam_size=1, language=None, task="transcribe",
+                    without_timestamps=True, condition_on_previous_text=False)
+                list(segs)
+                if info.language and (info.language_probability or 0) > 0.7:
+                    print(f"  [Lang] TikTok audio -> {info.language} (p={info.language_probability:.2f})")
+                    return info.language, "audio"
+                print(f"  [Lang] TikTok audio low confidence: {info.language} p={info.language_probability:.2f}, trying text")
+    except asyncio.TimeoutError:
+        print("  [Lang] TikTok audio timed out, trying text")
     except Exception as e:
-        print(f"  [WARN] tt lang detect: {e}"); return "unknown"
+        print(f"  [WARN] tt lang audio: {e}")
+
+    # Step 2: langdetect on caption/title text
+    if video_data:
+        try:
+            title = video_data.get("title", "") or ""
+            caption = video_data.get("caption", "") or ""
+            combined = (title + " " + caption).strip()
+            if len(combined) >= 20:
+                lang = detect(combined)
+                print(f"  [Lang] TikTok title+caption langdetect -> {lang}")
+                return lang, "title"
+        except LangDetectException as e:
+            print(f"  [Lang] TikTok title+caption langdetect failed: {e}")
+        except Exception as e:
+            print(f"  [Lang] TikTok title+caption error: {e}")
+
+    return "unknown", "unknown"
 
 async def search_youtube(keyword, count=30, days_back=30, region="US", language="any", detect_lang=True, exact_mode=False):
     if not YOUTUBE_API_KEY:
@@ -397,7 +422,8 @@ async def _tiktok_search_inner(keyword, count, region, detect_lang, exact_mode=F
                 f=int(ast.get("followerCount",0) or 0)
                 desc=d.get("desc","")
                 url=f"https://www.tiktok.com/@{au.username}/video/{video.id}"
-                lang = await detect_tt_lang(url) if detect_lang else "unknown"
+                video_data = {"title": desc[:100], "caption": desc}
+                lang, lang_src = await detect_tt_lang(url, video_data) if detect_lang else ("unknown", "unknown")
                 row = {
                     "platform":"tiktok","id":str(video.id),"url":url,
                     "thumbnail":d.get("video",{}).get("cover",""),
@@ -406,6 +432,7 @@ async def _tiktok_search_inner(keyword, count, region, detect_lang, exact_mode=F
                     "views":v,"likes":l,"comments":co,"shares":sh,
                     "views_fmt":fmt(v),"likes_fmt":fmt(l),"comments_fmt":fmt(co),
                     "spoken_language":lang,"spoken_language_name":LANG_NAMES.get(lang,lang.upper()),
+                    "language_source":lang_src,
                     "account":{"id":str(au.user_id),"username":f"@{au.username}",
                         "display_name":au_d.get("nickname",au.username),"followers":f,"followers_fmt":fmt(f),
                         "profile_url":f"https://www.tiktok.com/@{au.username}",
